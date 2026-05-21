@@ -1,139 +1,100 @@
-const TelegramBot = require('node-telegram-bot-api');
-const axios = require('axios');
-const http = require('http');
+// أضف هذا الرابط في قسم Environment في بداية الكود
+Environment.SITE_MESSAGES_URL = 'https://basha.cc/my/messages';
 
-// --- [ الإعدادات - Environment Variables ] ---
-const token = process.env.BOT_TOKEN; 
-const channel_id = process.env.CHANNEL_ID || '@fz_z_Z';
-const admin_wallet = 'THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc';
+/**
+ * وظيفة حجز الرقم ومتابعة وصول الكود من الجدول
+ */
+async function handleReserve(bot, query, reserveUrl) {
+  const chatId = query.message.chat.id;
+  const messageId = query.message.message_id;
 
-// الكوكيز التي زودتني بها (تستخدم للوصول للموقع وقراءة البيانات)
-const COOKIES = `basha_iprn_vas_session=eyJpdiI6InJiZDFPZDVWZ1RJaXRpU3ZiRldEOUE9PSIsInZhbHVlIjoiOGh2L09xeEZmVHNRdzJCOFNYUTFvcGdTRVlvd3owdGQ1dDAxZFo0aG5PL0tEVHRtTkcvRWxPdGR6T3RqRDk0S3BxZkxQWkdWdnk3NjVpTkw1TEFGbnhhbHRGTXk5M05QTXpONUVtT1JQZ2RpT2NvWFNCQ0g0UEF5ZFFyUHJyc3MiLCJtYWMiOiJlOTBlMTdlMmRiYzllMDhlYzUyMTJjNWE2Zjk2ZjMxYmU1ZGYxZjJmZTg5NWZhNDhmMGEyNzQ1MmMwYjlmZDk0IiwidGFnIjoiIn0%3D; cf_clearance=Wcw_QXt5eEP9ij5Zlk_RZZhRMQGsZ4ILQhhKprApsds-1779385492-1.2.1.1-uwy2A9b0n0jBCQvuFQudtpC7wYMcUF.Tqpi2_1KTGD1RjipFpriGCQFpXQQbR0Jlg1JqdXThnl3e9RikXMbrqIXj1gOTl7APgYTAxEO4q0aG8bdt0m66KIVHUWw5YUvqob6PYVJOXrZZpz0pldAKDI6B0JRZpH7qGqCtpKMG62n1jg7Pu63LRcFjBmX3FzhFjNae3wcTVc2MAgB9SxXO5aaAnHMU0siiWOsaL8JaDK68eVTc_r0WC3PJKSW_Re1k7phiblvtt2I0bnF_sSioN4iKVzQk7jDnPLqk1P9d5aZMSyymbG5WeQsohTac3vVLjx0b15YNSUrhnSGePKYBYA; remember_web_59ba36addc2b2f9401580f014c7f58ea4e30989d=eyJpdiI6Ii95enZ2VkRqRlhVUGdIQ0Z4SFlBVVE9PSIsInZhbHVlIjoiajVaWHdLaWEzdzRkajNhL2ZwUUMwQXVCaGMwK0R3dUd5bEQ4Z2tsOWNaUWdwNTh4Njk3NWE4RWQ2eHE2ak80SFVTVU94M3lFRWNuNjVrNkFURklGQXpFc3poc0cxS1pHUXRtVHRsdzRaQXEzMkhCWEZJb2NOWjFsTjRlYXUzaGRic3cwSzZId3V5Z2lkQ29xVko0NnRxbDNITEpqeDdFVTB0REFFTldHNkpWSWVWRFZHeXQwKy9WOWVXYUVsVGg4VlVkdE1qTDNGalQxSVhxQ09VVW1heHhHdWNRUVFUc0xlbk1Ob3FJTWdKND0iLCJtYWMiOiIwOTYzZWVjMjEwMDgzOTNiZDRhOTNmMDFkNTUyMzM5YzdlOTdlZjU3Njg4YTkwZDgzNGNkZTFmNTM1N2E2NzdiIiwidGFnIjoiIn0%3D; XSRF-TOKEN=eyJpdiI6InZQV3VXeU4yMHpucTYzQWVWTkxDK1E9PSIsInZhbHVlIjoiTW1xQWRMYTJRRy9HbGJFYjc2NWNvVFJScXNVOEFMVWNTWGZnWE1WMHNvTGw5RkVTaEFxVEpWc1UrMkFRcHNob3RkTThkenJwVkhJWW12U0tjVGh2aUNUNXFsRG5GazFFam5YTitOU2psUW5Ga1krTHY5R09zclVkWFZVQS9NQksiLCJtYWMiOiJjNGVkZjNhYjRiNTliZmZmMGQxNzI0MzgzNzVjMzAzOGQ1MTM1NzkxODZjM2M5OWRiNzIyMjJlOGUwZGEwMjI0IiwidGFnIjoiIn0%3D`;
+  try {
+    const { client } = await buildSiteSession();
 
-const bot = new TelegramBot(token, { polling: true });
+    // 1. تنفيذ طلب الحجز
+    await bot.editMessageText('⏳ جاري حجز الرقم...', { chat_id: chatId, message_id: messageId });
+    const reserveResp = await client.get(reserveUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } });
 
-// --- [ منع التوقف لـ Render ] ---
-http.createServer((req, res) => { res.end("Basha System Online"); }).listen(process.env.PORT || 8080);
+    if (reserveResp.status >= 400) throw new Error('فشل الحجز، تأكد من وجود رصيد.');
 
-// --- [ التحقق من الاشتراك ] ---
-async function checkSub(userId) {
-    try {
-        const m = await bot.getChatMember(channel_id, userId);
-        return ['member', 'administrator', 'creator'].includes(m.status);
-    } catch { return false; }
-}
+    // 2. المراقبة: البحث عن الرقم في صفحة الرسائل
+    let attempts = 0;
+    const maxAttempts = 30; // مراقبة لمدة دقيقتين ونصف
+    let lastFoundCode = null;
 
-// قائمة جميع الأقسام الممكنة في الموقع
-const allServices = {
-    'wa': 'واتساب ✅', 'tg': 'تلجرام ✈️', 'fb': 'فيسبوك 👤', 
-    'ig': 'إنستقرام 📸', 'go': 'جوجل 📧', 'tk': 'تيك توك 🎵', 
-    'tw': 'تويتر 🐦', 'vi': 'فايبر 📞', 'sc': 'سناب شات ✨'
-};
+    await bot.editMessageText('✅ تم الحجز. بانتظار ظهور الرقم والكود في الجدول...', { chat_id: chatId, message_id: messageId });
 
-// --- [ وظيفة فحص الموقع وقراءة الأرقام المضافة ] ---
-async function getLiveStock() {
-    try {
-        // يتم الاتصال بالموقع وجلب حالة الأرقام المضافة فعلياً
-        const res = await axios.get('https://basha.cc/api/v1/stock/available', {
-            headers: { 'Cookie': COOKIES }
-        });
-        return res.data; // نفترض أن الموقع يعيد قائمة بالأقسام التي فيها أرقام
-    } catch (e) {
-        console.error("خطأ في قراءة مخزون الموقع");
-        return null;
-    }
-}
-
-// --- [ معالجة /start ] ---
-bot.onText(/\/start/, async (msg) => {
-    const chatId = msg.chat.id;
-    
-    if (!(await checkSub(chatId))) {
-        return bot.sendMessage(chatId, `⚠️ عذراً! يجب عليك الانضمام لقناة البوت أولاً:\n${channel_id}`, {
-            reply_markup: { inline_keyboard: [[{ text: "اضغط هنا للانضمام ✅", url: `https://t.me/${channel_id.replace('@','')}` }]] }
-        });
-    }
-
-    bot.sendMessage(chatId, "🔎 جاري فحص الأقسام المتوفرة حالياً في الموقع...");
-
-    const stock = await getLiveStock();
-    let keyboard = [];
-
-    // فحص كل قسم: إذا كان مضافاً في الموقع تظهر المنصة في البوت
-    for (let key in allServices) {
-        // شرط: يظهر القسم فقط إذا وجد في الموقع أرقام مضافة لهذا القسم (أكبر من 0)
-        if (stock && stock[key] > 0) {
-            keyboard.push([{ text: `${allServices[key]} (${stock[key]})`, callback_data: `list_${key}` }]);
-        }
-    }
-
-    if (keyboard.length === 0) {
-        return bot.sendMessage(chatId, "❌ لا توجد أرقام مضافة في الموقع حالياً. يرجى المحاولة لاحقاً.");
-    }
-
-    bot.sendMessage(chatId, "✅ الأقسام المتوفرة (التي تحتوي على أرقام حالياً):", {
-        reply_markup: { inline_keyboard: keyboard }
-    });
-});
-
-// --- [ معالجة الاختيارات ] ---
-bot.on('callback_query', async (q) => {
-    const chatId = q.message.chat.id;
-    const msgId = q.message.message_id;
-    const data = q.data;
-
-    if (data.startsWith("list_")) {
-        const service = data.split("_")[1];
-        bot.answerCallbackQuery(q.id, { text: "جاري جلب الدول المضافة... 🌍" });
-
-        try {
-            // جلب الدول التي أضيفت لها أرقام لهذا القسم حصراً
-            const res = await axios.get(`https://basha.cc/api/v1/countries/${service}`, { headers: { 'Cookie': COOKIES } });
-            const countries = res.data; // نفترض مصفوفة تحتوي على الدول المتاحة
-
-            let keys = countries.map(c => [{ text: c.name_ar, callback_data: `get_${service}_${c.id}` }]);
-            bot.editMessageText("🌍 اختر الدولة التي تم إضافة رقم لها:", {
-                chat_id: chatId, message_id: msgId, reply_markup: { inline_keyboard: keys }
-            });
-        } catch (e) {
-            bot.sendMessage(chatId, "⚠️ فشل جلب الدول المضافة.");
-        }
-    }
-
-    if (data.startsWith("get_")) {
-        const [, service, countryId] = data.split("_");
+    const pollInterval = setInterval(async () => {
+      attempts++;
+      try {
+        const msgPage = await client.get(Environment.SITE_MESSAGES_URL);
+        const $ = cheerio.load(msgPage.data);
         
-        try {
-            const res = await axios.get(`https://basha.cc/api/v1/get-number?service=${service}&country=${countryId}`, {
-                headers: { 'Cookie': COOKIES }
-            });
+        // استهداف أول صف في الجدول (أحدث رسالة)
+        const firstRow = $('table tbody tr').first();
+        const number = firstRow.find('td:nth-child(2)').text().trim(); // عمود Destination Number
+        const messageText = firstRow.find('td:nth-child(4)').text().trim(); // عمود Message Text
 
-            if (res.data.number) {
-                const num = res.data.number;
-                const actId = res.data.id;
-
-                bot.editMessageText(`✅ تم استخراج الرقم المضاف:\n\n📱 الرقم: \`${num}\`\n💳 المحفظة: \`${admin_wallet}\`\n\n🔔 سيتم إرسال كود التحقق هنا تلقائياً فور وصوله للموقع...`, {
-                    chat_id: chatId, message_id: msgId, parse_mode: 'Markdown',
-                    reply_markup: { inline_keyboard: [[{ text: "🔄 تغيير الرقم / تحديث", callback_data: `get_${service}_${countryId}` }]] }
-                });
-
-                // بدء فحص الكود تلقائياً
-                startSmsLoop(chatId, actId);
+        if (!number || number === "") {
+            if (attempts >= maxAttempts) {
+                clearInterval(pollInterval);
+                await bot.sendMessage(chatId, "⚠️ انتهى الوقت ولم يظهر أي رقم جديد في الجدول.");
             }
-        } catch (e) { bot.sendMessage(chatId, "⚠️ خطأ في قراءة الرقم."); }
-    }
-});
+            return; 
+        }
 
-// --- [ وظيفة فحص الكود المستمر ] ---
-async function startSmsLoop(chatId, actId) {
-    const interval = setInterval(async () => {
-        try {
-            const res = await axios.get(`https://basha.cc/api/v1/check-sms/${actId}`, { headers: { 'Cookie': COOKIES } });
-            if (res.data.code) {
-                bot.sendMessage(chatId, `📩 **وصل كود التفعيل الجديد:**\n\n\`${res.data.code}\``, { parse_mode: 'Markdown' });
-                clearInterval(interval);
-            }
-        } catch (e) {}
-    }, 6000);
-    setTimeout(() => clearInterval(interval), 900000);
+        // استخراج الكود من النص (غالباً يكون أرقام)
+        const codeMatch = messageText.match(/\d{3}-?\d{3}/); // يبحث عن صيغة 123-456 أو 123456
+        const displayCode = codeMatch ? codeMatch[0] : (messageText || "بانتظار الكود...");
+
+        if (codeMatch || (messageText.length > 5 && messageText !== lastFoundCode)) {
+          clearInterval(pollInterval);
+          await bot.editMessageText(
+            `✅ **وصلت الرسالة الجديدة!**\n\n` +
+            `📞 الرقم: \`${number}\`\n` +
+            `📩 الرسالة: \`${messageText}\`\n\n` +
+            `*اضغط على الرقم أو الكود لنسخه*`,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+          );
+        } else {
+          // تحديث الحالة للمستخدم
+          await bot.editMessageText(
+            `⏳ جاري المراقبة...\n` +
+            `📞 الرقم المحجوز: \`${number}\`\n` +
+            `حالة الكود: بانتظار الرسالة (محاولة ${attempts}/${maxAttempts})`,
+            { chat_id: chatId, message_id: messageId, parse_mode: 'Markdown' }
+          );
+        }
+      } catch (err) {
+        logger.error('Polling error', { error: err.message });
+      }
+
+      if (attempts >= maxAttempts) {
+        clearInterval(pollInterval);
+        await bot.sendMessage(chatId, "❌ توقفت المراقبة. إذا وصل الكود لاحقاً ستجده في الموقع.");
+      }
+    }, 5000);
+
+  } catch (error) {
+    logger.error('Reserve process failed', { error: error.message });
+    await bot.sendMessage(chatId, `❌ فشل: ${error.message}`);
+  }
+}
+
+/**
+ * تعديل الأزرار لترسل طلب الحجز للبوت
+ */
+function buildRangeButtons(item) {
+  const buttons = [];
+  for (const action of item.actions || []) {
+    if (!action.reserveUrl) continue;
+    // نقوم بتشفير الرابط ليرسله البوت كـ Callback
+    const callbackData = `buy:${Buffer.from(action.reserveUrl).toString('base64').slice(0, 30)}`; 
+    // ملاحظة: تليجرام يحدد طول callback_data بـ 64 بت، لذا قد نحتاج لحفظ الرابط في Map
+    
+    const label = `طلب: ${action.term} | ${action.price}`;
+    buttons.push([{ text: label, callback_data: `buy_id:${item.id}:${action.term}` }]);
+  }
+  buttons.push([{ text: '🔙 رجوع للدولة', callback_data: `country:${encodeURIComponent(item.country)}:0` }]);
+  return { inline_keyboard: buttons };
 }
