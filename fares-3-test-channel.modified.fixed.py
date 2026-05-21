@@ -2606,57 +2606,6 @@ def download_logs(message):
     else:
         bot.reply_to(message, "📭 ملف اللوج فارغ أو غير موجود.")
 
-def check_connection(message):
-    site_ok = "❌ غير متاح"
-    portal_ok = "⚠️ غير مفحوص"
-    cookies_ok = "⚠️ غير متوفرة"
-    tg_ok = "❌ غير متاح"
-
-    try:
-        r = requests.get(SITE_URL, timeout=8, allow_redirects=True)
-        site_ok = f"✅ {r.status_code}"
-    except Exception as e:
-        site_ok = f"❌ {type(e).__name__}: {e}"
-
-    try:
-        session = _build_site_session()
-        cookies_ok = "✅ متوفرة" if getattr(session, "cookies", None) else "⚠️ غير متوفرة"
-        portal_resp = session.get(f"{SITE_URL}/portal", timeout=12, allow_redirects=True)
-        portal_ok = f"✅ {portal_resp.status_code}"
-    except Exception as e:
-        portal_ok = f"❌ {type(e).__name__}: {e}"
-
-    try:
-        me = bot.get_me()
-        tg_ok = f"✅ @{getattr(me, 'username', '') or 'b
-    async def check_connection(message):
-    try:
-   async def check_connection(message):
-    try:
-        # هنا يتم تنفيذ فحوصاتك الحالية (site_ok, portal_ok, etc.)
-        # ... (تأكد من بقاء الكود الخاص بك هنا) ...
-        
-        # استدعاء الدالة لجلب البيانات من باشا
-        basha_data = fetch_numbers_from_basha()
-
-        # بناء الرسالة (تأكد من وجود متغيرات الفحص الخاصة بك هنا)
-        text = (
-            f"🔍 <b>فحص الاتصال</b>\n\n"
-            f"🌐 الموقع: {html.escape(str(site_ok))}\n"
-            f"🧩 البوابة: {html.escape(str(portal_ok))}\n"
-            f"🍪 الكوكيز: {html.escape(str(cookies_ok))}\n"
-            f"🤖 تليجرام: {html.escape(str(tg_ok))}\n\n"
-            f"📋 <b>بيانات الموقع:</b>\n{basha_data}"
-        )
-        
-        # إرسال الرسالة (يجب أن تكون داخل الدالة ومزاحة لليمين)
-        await message.reply(text, parse_mode="HTML")
-
-    except Exception as e:
-        # معالجة أي خطأ قد يحدث أثناء الفحص
-        error_msg = f"❌ حدث خطأ أثناء الفحص: {str(e)}"
-        await message.reply(error_msg)
-   
 
 
 def _build_platform_picker_markup() -> types.InlineKeyboardMarkup:
@@ -2712,6 +2661,49 @@ def _build_number_actions_markup() -> types.InlineKeyboardMarkup:
     mk.add(types.InlineKeyboardButton("🌐 رجوع للمنصات", callback_data="num_back"))
     return mk
 
+async def check_connection(message):
+    site_ok = "❌ غير متاح"
+    portal_ok = "⚠️ غير مفحوص"
+    cookies_ok = "⚠️ غير متوفرة"
+    tg_ok = "❌ غير متاح"
+
+    try:
+        r = requests.get(SITE_URL, timeout=8, allow_redirects=True)
+        site_ok = f"✅ {r.status_code}"
+    except Exception as e:
+        site_ok = f"❌ {type(e).__name__}: {e}"
+
+    try:
+        session = _build_site_session()
+        cookies_ok = "✅ متوفرة" if getattr(session, "cookies", None) else "⚠️ غير متوفرة"
+        portal_resp = session.get(f"{SITE_URL}/portal", timeout=12, allow_redirects=True)
+        portal_ok = f"✅ {portal_resp.status_code}"
+    except Exception as e:
+        portal_ok = f"❌ {type(e).__name__}: {e}"
+
+    try:
+        me = bot.get_me()
+        tg_ok = f"✅ @{getattr(me, 'username', '') or 'bot'}"
+    except Exception as e:
+        tg_ok = f"❌ {type(e).__name__}: {e}"
+
+    # استدعاء الدالة لجلب البيانات من باشا
+    basha_data = fetch_numbers_from_basha()
+
+    # بناء الرسالة
+    text = (
+        f"🔍 <b>فحص الاتصال</b>\n\n"
+        f"🌐 الموقع: {html.escape(str(site_ok))}\n"
+        f"🧩 البوابة: {html.escape(str(portal_ok))}\n"
+        f"🍪 الكوكيز: {html.escape(str(cookies_ok))}\n"
+        f"🤖 تليجرام: {html.escape(str(tg_ok))}\n\n"
+        f"📋 <b>بيانات الموقع:</b>\n{basha_data}"
+    )
+
+    try:
+        await message.reply(text, parse_mode="HTML")
+    except Exception:
+        await bot.send_message(message.chat.id, text, parse_mode="HTML")
 
 def _selected_user_platform(state: Optional[Dict]) -> str:
     return _clean_platform_name((state or {}).get("platform", ""))
