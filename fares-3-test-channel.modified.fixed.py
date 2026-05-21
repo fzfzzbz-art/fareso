@@ -137,9 +137,6 @@ def _env_required(name: str):
     return value
 
 _DEFAULTS = {
-    # ⚠️ الحماية: لا تضع أي أسرار حقيقية داخل الملف.
-    # ضع القيم الحساسة عبر Environment Variables أو ملف .env فقط.
-        _DEFAULTS = {
     "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 0)),
     "SITE_URL": "https://www.ivasms.com",
@@ -148,6 +145,9 @@ _DEFAULTS = {
     "SITE_EMAIL": "",
     "SITE_PASS": ""
 }
+
+
+
 
 
 EMBEDDED_SITE_COOKIES = [
