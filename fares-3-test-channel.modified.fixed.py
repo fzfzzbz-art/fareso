@@ -136,19 +136,26 @@ def _env_required(name: str):
     value = os.getenv(name, "").strip()
     return value
 
+
+
 _DEFAULTS = {
-    "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
+    # بيانات البوت الأساسية
+    "BOT_TOKEN": os.environ.get("BOT_TOKEN", "7291196147:AAEvWl8N-z-S0N9_Fp0W53XN-9X9X9X9X9X"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
+
+    # بيانات موقع Basha
     "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
     "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
     "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
-    "SITE_COOKIE": os.environ.get("SITE_COOKIE", ""),
+    
+    # روابط جلب الأرقام والكوكيز
     "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
-    "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "SITE_COOKIE_FILE": "runtime_cookies.json"
+    "SITE_COOKIE": os.environ.get("SITE_COOKIE", ""),
+    "SITE_COOKIE_FILE": "runtime_cookies.json",
+
+    # التمويه لتجنب حظر 403 (ضروري جداً)
+    "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 }
-
-
 
 
 
