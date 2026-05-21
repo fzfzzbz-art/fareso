@@ -1,0 +1,14 @@
+[
+  {
+    "name": "ivas_sms_session",
+    "value": "eyJpdiI6IkNaOUw4ekJieWdpWnJUQjArQTk4YkE9PSIsInZhbHVlIjoiR0c5eC9PNFloVWo1ejVqVDA1WWx5dXFwOGlHc09weHVRaE5kTC8xcFhObVFxbUdrQmg3Mmc0NFBOeUZlTkQveWI3bnhwQjA2K3ZHNjQvb0NUaGdleDM5ell5aVdvWktDdXRXQ2hzVzZ3empiSlVJTEJnNjBOUEtyQXdGakNMRFoiLCJtYWMiOiI5MGJlMTRkODkwMDFiOWJmZTdmZjU2ODc1MmE1NGJjNjEzYTI2ODA3ZjA4MzY0YzY3ZmE0NmQ5NTk3NGFjZGRmIiwidGFnIjoiIn0%3D",
+    "domain": "www.ivasms.com",
+    "path": "/"
+  },
+  {
+    "name": "XSRF-TOKEN",
+    "value": "eyJpdiI6InVVMGJKd3AzcVRBTVBkbW8xMXZxNVE9PSIsInZhbHVlIjoidEYrdFJNUGNFSjMzZjhmTmc0ZzIrQmQrRHlMN0FrcFRaNFUzdklqTFQyMlgra29IaVhES3dMWmIrbXpMVTV5Zkt1ZGFQS3FPeDlHM1Fjdi8vUk9teTdMZHA1T2hpWmJ1S2xLOWNpUHA4ZU9XV0kzK1FHcG82aUpVWk5TRVI0d0siLCJtYWMiOiIzYWU0ZjRlZTQwNzY4NTlkNmZjNDMwN2EwODMyZmY1Yzg1ZGViNzNhOTQ4MjU5OGIwNWIyODAzNjNlZTNlYmQ2IiwidGFnIjoiIn0%3D",
+    "domain": "www.ivasms.com",
+    "path": "/"
+  }
+]
