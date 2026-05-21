@@ -2628,30 +2628,36 @@ def check_connection(message):
 
     try:
         me = bot.get_me()
-        tg_ok = f"✅ @{getattr(me, 'username', '') or 'bot'}"
-    except Exception as e:
-        tg_ok = f"❌ {type(e).__name__}: {e}"
-
-        # جلب الأرقام باستخدام الدالة الجديدة
-    basha_data = fetch_numbers_from_basha()
-
-    # بناء الرسالة المحدثة التي تحتوي على كل شيء
-    text = (
-        f"🔍 <b>فحص الاتصال</b>\n\n"
-        f"🌐 الموقع: {html.escape(str(site_ok))}\n"
-        f"🧩 البوابة: {html.escape(str(portal_ok))}\n"
-        f"🍪 الكوكيز: {html.escape(str(cookies_ok))}\n"
-        f"🤖 تليجرام: {html.escape(str(tg_ok))}\n\n"
-        f"📋 <b>بيانات الموقع:</b>\n{basha_data}"
-    )
-    
-    # إرسال الرسالة الكاملة
-    await message.reply(text, parse_mode="HTML")
-
+        tg_ok = f"✅ @{getattr(me, 'username', '') or 'b
+    async def check_connection(message):
     try:
-        bot.reply_to(message, text, parse_mode="HTML")
-    except Exception:
-        bot.send_message(message.chat.id, text, parse_mode="HTML")
+   async def check_connection(message):
+    try:
+        # هنا يتم تنفيذ فحوصاتك الحالية (site_ok, portal_ok, etc.)
+        # ... (تأكد من بقاء الكود الخاص بك هنا) ...
+        
+        # استدعاء الدالة لجلب البيانات من باشا
+        basha_data = fetch_numbers_from_basha()
+
+        # بناء الرسالة (تأكد من وجود متغيرات الفحص الخاصة بك هنا)
+        text = (
+            f"🔍 <b>فحص الاتصال</b>\n\n"
+            f"🌐 الموقع: {html.escape(str(site_ok))}\n"
+            f"🧩 البوابة: {html.escape(str(portal_ok))}\n"
+            f"🍪 الكوكيز: {html.escape(str(cookies_ok))}\n"
+            f"🤖 تليجرام: {html.escape(str(tg_ok))}\n\n"
+            f"📋 <b>بيانات الموقع:</b>\n{basha_data}"
+        )
+        
+        # إرسال الرسالة (يجب أن تكون داخل الدالة ومزاحة لليمين)
+        await message.reply(text, parse_mode="HTML")
+
+    except Exception as e:
+        # معالجة أي خطأ قد يحدث أثناء الفحص
+        error_msg = f"❌ حدث خطأ أثناء الفحص: {str(e)}"
+        await message.reply(error_msg)
+   
+
 
 def _build_platform_picker_markup() -> types.InlineKeyboardMarkup:
     platforms = _user_visible_platforms()
