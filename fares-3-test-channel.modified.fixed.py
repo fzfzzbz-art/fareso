@@ -140,14 +140,15 @@ _DEFAULTS = {
     # ⚠️ الحماية: لا تضع أي أسرار حقيقية داخل الملف.
     # ضع القيم الحساسة عبر Environment Variables أو ملف .env فقط.
         _DEFAULTS = {
-    "BOT_TOKEN": os.environ.get("BOT_TOKEN", "ضع_التوكن_هنا_كاحتياط"),
-    "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
+    "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
+    "ADMIN_ID": int(os.environ.get("ADMIN_ID", 0)),
     "SITE_URL": "https://www.ivasms.com",
     "SITE_COOKIE": "",
     "SITE_COOKIE_FILE": "",
     "SITE_EMAIL": "",
-    "SITE_PASS": "",
+    "SITE_PASS": ""
 }
+
 
 EMBEDDED_SITE_COOKIES = [
     {
