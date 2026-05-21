@@ -139,8 +139,13 @@ def _env_required(name: str):
 _DEFAULTS = {
     # ⚠️ الحماية: لا تضع أي أسرار حقيقية داخل الملف.
     # ضع القيم الحساسة عبر Environment Variables أو ملف .env فقط.
-    BOT_TOKEN = "8666549632:AAHvHgEKwhvdj7BzivhFsxrmU7G2vBAcRx4"
-ADMIN_ID = 7231690686
+        try:
+        BOT_TOKEN = "7291196147:AAEvWl8N-z-S0N9_Fp0W53XN-9X9X9X9X9X"
+        ADMIN_ID = 6360098418
+        bot = TeleBot(BOT_TOKEN)
+    except Exception as e:
+        logger.error(f"Error initializing bot: {e}")
+        sys.exit(1)
     "SITE_URL":    "https://www.ivasms.com",
     "SITE_COOKIE": "",
     "SITE_COOKIE_FILE": "",
