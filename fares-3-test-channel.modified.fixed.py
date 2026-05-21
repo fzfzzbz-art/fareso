@@ -1832,64 +1832,37 @@ def _fetch_numbers_from_homepage_scrape() -> List[Dict]:
             rows.append(item)
     return _dedupe_numbers(rows)
 
-def _portal_numbers_datatable_params(length: int = 200, start: int = 0, draw: int = 1) -> dict:
-    return {
-        "draw": str(max(1, int(draw or 1))),
-        "start": str(max(0, int(start or 0))),
-        "length": str(max(1, int(length or 200))),
-        "columns[0][data]": "number_id",
-        "columns[0][name]": "id",
-        "columns[0][searchable]": "true",
-        "columns[0][orderable]": "false",
-        "columns[0][search][value]": "",
-        "columns[0][search][regex]": "false",
-        "columns[1][data]": "Number",
-        "columns[1][name]": "Number",
-        "columns[1][searchable]": "true",
-        "columns[1][orderable]": "true",
-        "columns[1][search][value]": "",
-        "columns[1][search][regex]": "false",
-        "columns[2][data]": "range",
-        "columns[2][name]": "range",
-        "columns[2][searchable]": "true",
-        "columns[2][orderable]": "true",
-        "columns[2][search][value]": "",
-        "columns[2][search][regex]": "false",
-        "columns[3][data]": "A2P",
-        "columns[3][name]": "A2P",
-        "columns[3][searchable]": "true",
-        "columns[3][orderable]": "true",
-        "columns[3][search][value]": "",
-        "columns[3][search][regex]": "false",
-        "columns[4][data]": "LimitA2P",
-        "columns[4][name]": "LimitA2P",
-        "columns[4][searchable]": "true",
-        "columns[4][orderable]": "true",
-        "columns[4][search][value]": "",
-        "columns[4][search][regex]": "false",
-        "columns[5][data]": "limit_cli_a2p",
-        "columns[5][name]": "limit_cli_a2p",
-        "columns[5][searchable]": "true",
-        "columns[5][orderable]": "true",
-        "columns[5][search][value]": "",
-        "columns[5][search][regex]": "false",
-        "columns[6][data]": "limit_cli_did_a2p",
-        "columns[6][name]": "limit_cli_did_a2p",
-        "columns[6][searchable]": "true",
-        "columns[6][orderable]": "true",
-        "columns[6][search][value]": "",
-        "columns[6][search][regex]": "false",
-        "columns[7][data]": "action",
-        "columns[7][name]": "action",
-        "columns[7][searchable]": "false",
-        "columns[7][orderable]": "false",
-        "columns[7][search][value]": "",
-        "columns[7][search][regex]": "false",
-        "order[0][column]": "1",
-        "order[0][dir]": "desc",
-        "search[value]": "",
-        "search[regex]": "false",
-    }
+
+def fetch_numbers_from_basha():
+    try:
+        # استخدام الرابط الجديد والكوكيز الموجودة في إعداداتك
+        response = requests.get(
+            os.getenv("RANGES_URL", "https://basha.cc/my/ranges"), 
+            headers={"Cookie": os.getenv("SITE_COOKIE", ""), "User-Agent": "Mozilla/5.0"},
+            timeout=15
+        )
+        
+        if response.status_code != 200:
+            return f"❌ خطأ في الاتصال: {response.status_code}"
+
+        soup = BeautifulSoup(response.text, 'html.parser')
+        table = soup.find('table') # البحث عن الجدول
+        if not table:
+            return "⚠️ لم يتم العثور على أرقام في الجدول."
+
+        rows = table.find_all('tr')
+        results = []
+        for row in rows[1:]: # تخطي صف العناوين
+            cols = row.find_all('td')
+            if len(cols) >= 2:
+                range_name = cols[0].text.strip()
+                count = cols[1].text.strip()
+                results.append(f"📦 {range_name}: {count} رقم")
+        
+        return "📋 الأرقام المتاحة:\n\n" + "\n".join(results) if results else "⚠️ الجدول فارغ."
+
+    except Exception as e:
+        return f"❌ حدث خطأ: {str(e)}"
 
 
 def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
@@ -2656,15 +2629,22 @@ def check_connection(message):
     except Exception as e:
         tg_ok = f"❌ {type(e).__name__}: {e}"
 
+        # جلب الأرقام باستخدام الدالة الجديدة
+    basha_data = fetch_numbers_from_basha()
+
+    # بناء الرسالة المحدثة التي تحتوي على كل شيء
     text = (
-        "🔎 <b>فحص الاتصال</b>\n\n"
+        f"🔍 <b>فحص الاتصال</b>\n\n"
         f"🌐 الموقع: {html.escape(str(site_ok))}\n"
         f"🧩 البوابة: {html.escape(str(portal_ok))}\n"
         f"🍪 الكوكيز: {html.escape(str(cookies_ok))}\n"
-        f"🤖 تيليجرام: {html.escape(str(tg_ok))}\n"
-        f"📟 واتساب أساسي: {html.escape('✅ مهيأ' if WA_NUMBER_1 else '⚠️ غير مهيأ')}\n"
-        f"📟 واتساب احتياطي: {html.escape('✅ مهيأ' if WA_NUMBER_2 else '⚠️ غير مهيأ')}"
+        f"🤖 تليجرام: {html.escape(str(tg_ok))}\n\n"
+        f"📋 <b>بيانات الموقع:</b>\n{basha_data}"
     )
+    
+    # إرسال الرسالة الكاملة
+    await message.reply(text, parse_mode="HTML")
+
     try:
         bot.reply_to(message, text, parse_mode="HTML")
     except Exception:
