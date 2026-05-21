@@ -140,12 +140,11 @@ _DEFAULTS = {
     # ⚠️ الحماية: لا تضع أي أسرار حقيقية داخل الملف.
     # ضع القيم الحساسة عبر Environment Variables أو ملف .env فقط.
         try:
-        BOT_TOKEN = "7291196147:AAEvWl8N-z-S0N9_Fp0W53XN-9X9X9X9X9X"
+                        BOT_TOKEN = "7291196147:AAEvWl8N-z-S0N9_Fp0W53XN-9X9X9X9X9X"
         ADMIN_ID = 6360098418
         bot = TeleBot(BOT_TOKEN)
-    except Exception as e:
-        logger.error(f"Error initializing bot: {e}")
-        sys.exit(1)
+
+
     "SITE_URL":    "https://www.ivasms.com",
     "SITE_COOKIE": "",
     "SITE_COOKIE_FILE": "",
