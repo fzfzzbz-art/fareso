@@ -139,23 +139,25 @@ def _env_required(name: str):
 
 
 _DEFAULTS = {
-    # بيانات البوت الأساسية
-    "BOT_TOKEN": os.environ.get("BOT_TOKEN", "7291196147:AAEvWl8N-z-S0N9_Fp0W53XN-9X9X9X9X9X"),
+    # بيانات البوت والمسؤول
+    "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
 
-    # بيانات موقع Basha
+    # روابط المواقع (تم التحديث لموقع باشا)
     "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
+    "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
+    
+    # بيانات الحساب (تُقرأ من Render)
     "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
     "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
+    "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
     
-    # روابط جلب الأرقام والكوكيز
-    "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
+    # الكوكيز والتمويه
     "SITE_COOKIE": os.environ.get("SITE_COOKIE", ""),
-    "SITE_COOKIE_FILE": "runtime_cookies.json",
-
-    # التمويه لتجنب حظر 403 (ضروري جداً)
-    "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "SITE_COOKIE_FILE": "runtime_cookies.json"
 }
+
 
 
 
@@ -552,7 +554,7 @@ def _start_hosting_heartbeat_once() -> None:
     threading.Thread(target=_loop, daemon=True).start()
 
 def _cookie_host() -> str:
-    return urllib.parse.urlparse(SITE_URL).hostname or "www.ivasms.com"
+    return urllib.parse.urlparse(SITE_URL).hostname or "https://basha.cc"
 
 def _cookie_domain_rank(domain: str, host: str) -> int:
     domain = str(domain or "").strip().lstrip(".").lower()
@@ -4432,40 +4434,7 @@ def delete_platform_command(message):
     else:
         bot.reply_to(message, f"📭 ما لقيتش أرقام محفوظة لمنصة {platform}.")
 
-EMBEDDED_SITE_COOKIES = [
-    {
-        "name": "ivas_sms_session",
-        "value": "eyJpdiI6InpselpOOHhuaWRVVG5xNm1iMWc2Y2c9PSIsInZhbHVlIjoib29sWm83VUcxbjRrL29ucXd5YVlINklNT1NiLzU4WlhCSjNyZkZIcnFuaWZSektkQlJqSGhlTFBGOGJocVFGa1lscHJML1hwRlNuWStQYnczV2RLU3FIZmFSY1dUZDh6N2I5cWRuKzM0TXYyTWE2Q2xmeWMvMFhOamlpejBySFMiLCJtYWMiOiJhNjhmMmY1Y2ZkNWNiOTEzM2ZjZmMwOGI0YjcwYmNlNDQ0YmViODc1ZTgxZDA4YmYzNjkwMmE4N2RiMDBhOGY3IiwidGFnIjoiIn0%3D",
-        "domain": "www.ivasms.com",
-        "path": "/",
-        "expires": 1776694653.951559,
-        "httpOnly": True,
-        "secure": False,
-        "sameSite": "lax",
-        "origin": "https://www.ivasms.com"
-    },
-    {
-        "name": "XSRF-TOKEN",
-        "value": "eyJpdiI6IlpEWnlpd2VUaHlaMUhIRzlxRUNFZ3c9PSIsInZhbHVlIjoiWnpHS21DTTFMYjNQRHVySnAzakRmZUN5eWpCL2FPcEE2LytEeWtadFQrZ3MwK0hBeFczcGlCQ0dueUdLZnRRVmRvb0FpZ0ltNGlYUzBDQzVFOHFKdkpDMnd4eWlUcCtSOThBYXFkUGtSTmJuU0ZxYUxqNHJidi9jd0tuN0p4cjEiLCJtYWMiOiJiNjUwZDU5ZmJkOTEyNGE4YmQ4YTBjNzgxNTBlNzY1NWFkYmVkZGJiNjg5NmQwY2I1NmRmMDg1OWI2ZjE2ZjFhIiwidGFnIjoiIn0%3D",
-        "domain": ".www.ivasms.com",
-        "path": "/",
-        "httpOnly": False,
-        "secure": False,
-        "sameSite": "unspecified",
-        "origin": "https://www.ivasms.com"
-    },
-    {
-        "name": "XSRF-TOKEN",
-        "value": "eyJpdiI6IlBYOWFnK0o3VUs2ZFFpZ1FQQ0VxOUE9PSIsInZhbHVlIjoidjJIa1VvV2Vkbi91cXB1ZjFCU0xvbzkyejB0YWJkaGhVOXRPZkVjanJ2alhtYUJqZTRyRXFoLzZFeThOTkljOTU3U1drK3BSWUpBVVByWVFYTStvVDNJYjF0SDBrWmtrSXQ3NmtmMnpHcWpEUlgzczdIaHpJVlpaU1pmdzlQRWkiLCJtYWMiOiJmMDE0MDJmMmUxNzQzNDY3N2M3NTQyMWIwYzRjZWFlZTAzMjQ0MTZkNGRiYzM0MzA2MTI2MTEzODM1MmIzY2Y2IiwidGFnIjoiIn0%3D",
-        "domain": "www.ivasms.com",
-        "path": "/",
-        "expires": 1776694653.951353,
-        "httpOnly": False,
-        "secure": False,
-        "sameSite": "lax",
-        "origin": "https://www.ivasms.com"
-    }
-]
+
 
 # مهم: لا تمسح قيم الكوكيز هنا. البوت يعتمد على SITE_COOKIE / SITE_COOKIE_FILE
 # أو runtime_cookies.json للوصول الصحيح لصفحات الموقع.
@@ -4786,7 +4755,7 @@ def delcookies_command(message):
         "أمثلة:\n"
         "1,3,5\n"
         "XSRF-TOKEN,ivas_sms_session\n"
-        "XSRF-TOKEN@www.ivasms.com/\n\n"
+        "XSRF-TOKEN@www.basha.cc/\n\n"
         "وللإلغاء اكتب: /cancel"
     )
     bot.register_next_step_handler(prompt, _process_delcookies_step)
@@ -4860,8 +4829,8 @@ def _cookie_help_text() -> str:
         "• /delcookies يقبل مثل: 1,3 أو XSRF-TOKEN\n\n"
         "مثال JSON:\n"
         "[\n"
-        "  {\"name\": \"XSRF-TOKEN\", \"value\": \"...\", \"domain\": \"www.ivasms.com\", \"path\": \"/\"},\n"
-        "  {\"name\": \"ivas_sms_session\", \"value\": \"...\", \"domain\": \"www.ivasms.com\", \"path\": \"/\"}\n"
+        "  {\"name\": \"XSRF-TOKEN\", \"value\": \"...\", \"domain\": \"www.basha.cc\", \"path\": \"/\"},\n"
+        "  {\"name\": \"ivas_sms_session\", \"value\": \"...\", \"domain\": \"www.basha.cc\", \"path\": \"/\"}\n"
         "]"
     )
 
@@ -4931,7 +4900,7 @@ def dev_cookie_delete_callback(call):
         "أمثلة:\n"
         "1,2,4\n"
         "XSRF-TOKEN,ivas_sms_session\n"
-        "XSRF-TOKEN@www.ivasms.com/\n\n"
+        "XSRF-TOKEN@www.basha.cc/\n\n"
         "للإلغاء اكتب: /cancel"
     )
     bot.register_next_step_handler(prompt, _process_delcookies_step)
@@ -9095,4 +9064,66 @@ def _supervise_main_forever() -> None:
 
 if __name__ == '__main__':
     _supervise_main_forever()
+
+(generic_backoff)
+
+
+def main():
+    _install_runtime_guardrails_once()
+    _ensure_single_local_instance()
+    _start_background_services()
+
+    _register_runtime_handlers_once()
+    _register_visible_bot_commands()
+    _restore_wa_queue_from_disk()
+    restored_numbers_count = _bootstrap_numbers_storage()
+    _refresh_dynamic_platforms()
+    _get_numbers_runtime_index()
+
+    logger.info('=' * 60)
+    logger.info('  Bot Pro v4 — Free Hosting Stable Start')
+    logger.info('=' * 60)
+
+    _start_wa_retry_worker_once()
+    current_count = _maybe_run_initial_sync()
+    _notify_admin_startup(restored_numbers_count, current_count)
+
+    log_event('BOT_STARTED', {
+        'numbers': current_count,
+        'platforms': len(_platform_picker_platforms()),
+        'auto_sync': AUTO_SYNC_NUMBERS,
+        'sync_interval_minutes': AUTO_SYNC_INTERVAL_MINUTES,
+    })
+
+    try:
+        bot.remove_webhook()
+    except Exception as webhook_err:
+        logger.warning(f'Webhook cleanup warning: {webhook_err}')
+
+    if AUTO_SYNC_NUMBERS:
+        logger.info('🔄 المزامنة التلقائية للأرقام مفعّلة.')
+        _start_auto_sync_loop_once()
+    else:
+        logger.info('⏸️ المزامنة التلقائية للأرقام متوقفة.')
+
+    _run_polling_forever()
+
+def _supervise_main_forever() -> None:
+    restart_delay = 5
+    while True:
+        try:
+            main()
+            logger.warning(f'main() exited unexpectedly; restarting in {restart_delay}s')
+        except KeyboardInterrupt:
+            logger.info('🛑 تم إيقاف البوت يدوياً من الطرفية.')
+            break
+        except Exception as fatal_err:
+            logger.exception(f'Fatal top-level crash, restarting in {restart_delay}s: {fatal_err}')
+        time.sleep(restart_delay)
+
+
+if __name__ == '__main__':
+    _supervise_main_forever()
+
+
 
