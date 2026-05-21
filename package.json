@@ -1,9 +1,9 @@
 {
   "name": "basha-bot",
   "version": "1.0.0",
-  "main": "basha_bot.js",
+  "main": "fares-3-test-channel.modified.fixed.py",
   "scripts": {
-    "start": "node basha_bot.js"
+    "start": "node fares-3-test-channel.modified.fixed.py"
   },
   "dependencies": {
     "node-telegram-bot-api": "^0.61.0",
