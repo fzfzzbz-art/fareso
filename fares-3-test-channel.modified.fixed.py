@@ -137,6 +137,7 @@ def _env_required(name: str):
     return value
 
 _DEFAULTS = {
+    "USER_AGENT": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36"
     "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 0)),
     "SITE_URL": "https://www.ivasms.com",
