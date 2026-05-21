@@ -2,21 +2,42 @@ const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
 const http = require('http');
 
-// --- الإعدادات الأساسية ---
-const token = 'YOUR_TELEGRAM_BOT_TOKEN'; // ضع توكن البوت هنا
-const api_key = 'YOUR_SMS_SERVICE_API_KEY'; // مفتاح API موقع الأرقام
+// --- [ الإعدادات - يرجى ملئها ] ---
+const token = 'YOUR_TELEGRAM_BOT_TOKEN'; // توكن بوتك من @BotFather
+const api_key = 'YOUR_SMS_SERVICE_API_KEY'; // مفتاح API من موقع الأرقام
 const channel_id = '@fz_z_Z'; // معرف القناة للاشتراك الإجباري
-const admin_wallet = 'THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc';
+const admin_wallet = 'THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc'; // محفظتك
 
+// تشغيل البوت
 const bot = new TelegramBot(token, { polling: true });
 
-// --- كود عدم توقف البوت (Keep-alive) ---
+// --- [ كود منع التوقف - Keep-alive ] ---
+const port = process.env.PORT || 8080;
 http.createServer((req, res) => {
-    res.write("Bot is Running!");
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.write("Bot is Running Successfully!");
     res.end();
-}).listen(8080);
+}).listen(port);
 
-// --- التحقق من الاشتراك الإجباري ---
+// --- [ قائمة البيانات ] ---
+const platforms = {
+    'wa': 'واتساب ✅',
+    'tg': 'تلجرام ✈️',
+    'ig': 'إنستقرام 📸',
+    'fb': 'فيسبوك 👤',
+    'go': 'جوجل/يوتيوب 📧'
+};
+
+const countries = {
+    '0': 'روسيا 🇷🇺',
+    '1': 'أوكرانيا 🇺🇦',
+    '6': 'إندونيسيا 🇮🇩',
+    '13': 'البرازيل 🇧🇷',
+    '22': 'الهند 🇮🇳',
+    '73': 'نيجيريا 🇳🇬'
+};
+
+// --- [ وظيفة التحقق من الاشتراك ] ---
 async function checkSubscription(userId) {
     try {
         const member = await bot.getChatMember(channel_id, userId);
@@ -26,14 +47,109 @@ async function checkSubscription(userId) {
     }
 }
 
-// --- القوائم والبيانات ---
-const platforms = {
-    'wa': 'واتساب ✅',
-    'tg': 'تلجرام ✈️',
-    'ig': 'إنستقرام 📸',
-    'fb': 'فيسبوك 👤'
-};
+// --- [ عند إرسال /start ] ---
+bot.onText(/\/start/, async (msg) => {
+    const chatId = msg.chat.id;
+    const isSubscribed = await checkSubscription(chatId);
 
+    if (!isSubscribed) {
+        return bot.sendMessage(chatId, `⚠️ عذراً عزيزي، يجب عليك الاشتراك في قناة البوت أولاً لاستخدام الخدمات:\n\n🔗 القناة: ${channel_id}`, {
+            reply_markup: {
+                inline_keyboard: [[{ text: "اضغط هنا للاشتراك ✅", url: `https://t.me/${channel_id.replace('@', '')}` }]]
+            }
+        });
+    }
+
+    const keyboard = Object.entries(platforms).map(([code, name]) => [{ text: name, callback_data: `plat_${code}` }]);
+    bot.sendMessage(chatId, "مرحباً بك في بوت الأرقام 🤖\n\nالرجاء اختيار المنصة التي تريد رقماً لها:", {
+        reply_markup: { inline_keyboard: keyboard }
+    });
+});
+
+// --- [ معالجة التفاعلات ] ---
+bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const messageId = query.message.message_id;
+    const data = query.data;
+
+    // 1. اختيار المنصة
+    if (data.startsWith('plat_')) {
+        const platCode = data.split('_')[1];
+        const countryKeyboard = Object.entries(countries).map(([id, name]) => [{ text: name, callback_data: `get_${platCode}_${id}` }]);
+        
+        bot.editMessageText("تم اختيار المنصة. الآن اختر الدولة المطلوبة:", {
+            chat_id: chatId,
+            message_id: messageId,
+            reply_markup: { inline_keyboard: countryKeyboard }
+        });
+    }
+
+    // 2. طلب الرقم أو تغييره
+    if (data.startsWith('get_')) {
+        const [, plat, country] = data.split('_');
+        
+        bot.answerCallbackQuery(query.id, { text: "جاري طلب الرقم... ⏳" });
+
+        try {
+            // طلب الرقم من API
+            const response = await axios.get(`https://api.sms-activate.org/stst.php?api_key=${api_key}&action=getNumber&service=${plat}&country=${country}`);
+            
+            if (response.data.includes('ACCESS_NUMBER')) {
+                const [ , activationId, phoneNumber] = response.data.split(':');
+                
+                const msgText = `✅ تم تجهيز رقمك الجديد:\n\n` +
+                                `📱 الرقم: \`${phoneNumber}\`\n` +
+                                `💬 المنصة: ${platforms[plat]}\n\n` +
+                                `💳 المحفظة للدفع: \`${admin_wallet}\`\n\n` +
+                                `⏳ انتظر وصول الكود هنا، سيتم إرساله فور وصوله تلقائياً...`;
+
+                bot.editMessageText(msgText, {
+                    chat_id: chatId,
+                    message_id: messageId,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "🔄 تغيير الرقم (رقم آخر)", callback_data: `get_${plat}_${country}` }],
+                            [{ text: "❌ إلغاء العملية", callback_data: `cancel_${activationId}` }]
+                        ]
+                    }
+                });
+
+                // بدء فحص وصول الكود تلقائياً
+                startCheckCode(chatId, activationId);
+
+            } else {
+                bot.sendMessage(chatId, "❌ عذراً، لا توجد أرقام متوفرة لهذه الدولة حالياً. جرب دولة أخرى.");
+            }
+        } catch (error) {
+            bot.sendMessage(chatId, "⚠️ حدث خطأ أثناء الاتصال بسيرفر الأرقام.");
+        }
+    }
+});
+
+// --- [ وظيفة فحص الكود التلقائي ] ---
+async function startCheckCode(chatId, id) {
+    let checkCount = 0;
+    const maxChecks = 60; // سيفحص لمدة 5 دقائق (كل 5 ثوانٍ)
+
+    const interval = setInterval(async () => {
+        try {
+            const res = await axios.get(`https://api.sms-activate.org/stst.php?api_key=${api_key}&action=getStatus&id=${id}`);
+            
+            if (res.data.includes('STATUS_OK')) {
+                const smsCode = res.data.split(':')[1];
+                bot.sendMessage(chatId, `📩 **وصل كود التفعيل الجديد!**\n\nالكود هو: \`${smsCode}\``, { parse_mode: 'Markdown' });
+                clearInterval(interval);
+            } 
+            else if (res.data === 'STATUS_CANCEL' || checkCount >= maxChecks) {
+                clearInterval(interval);
+            }
+            checkCount++;
+        } catch (e) {
+            console.log("Check Error");
+        }
+    }, 5000); 
+}
 const countries = {
     '0': 'روسيا 🇷🇺',
     '1': 'أوكرانيا 🇺🇦',
