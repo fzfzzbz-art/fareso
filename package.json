@@ -1,20 +1,13 @@
 {
-  "name": "basha-telegram-bot-js",
+  "name": "basha-bot",
   "version": "1.0.0",
-  "private": true,
-  "type": "commonjs",
+  "description": "Telegram Number Bot",
   "main": "basha_bot.js",
   "scripts": {
-    "start": "node basha_bot.js",
-    "check": "node --check basha_bot.js",
-    "self-test": "SELF_TEST=1 node basha_bot.js"
+    "start": "node basha_bot.js"
   },
   "dependencies": {
-    "axios": "^1.9.0",
-    "axios-cookiejar-support": "^6.0.4",
-    "cheerio": "^1.0.0",
-    "dotenv": "^16.4.7",
-    "node-telegram-bot-api": "^0.66.0",
-    "tough-cookie": "^5.1.1"
+    "node-telegram-bot-api": "^0.61.0",
+    "axios": "^1.6.0"
   }
 }
