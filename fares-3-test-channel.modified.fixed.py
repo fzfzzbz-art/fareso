@@ -139,8 +139,8 @@ def _env_required(name: str):
 _DEFAULTS = {
     # ⚠️ الحماية: لا تضع أي أسرار حقيقية داخل الملف.
     # ضع القيم الحساسة عبر Environment Variables أو ملف .env فقط.
-    "BOT_TOKEN":   "8674488533:AAGAg2PBEOmrCs00cxMdBeGNZp00a1z0Xb8",
-    "ADMIN_ID":    "7231690686",
+    BOT_TOKEN = "8666549632:AAHvHgEKwhvdj7BzivhFsxrmU7G2vBAcRx4"
+ADMIN_ID = 7231690686
     "SITE_URL":    "https://www.ivasms.com",
     "SITE_COOKIE": "",
     "SITE_COOKIE_FILE": "",
