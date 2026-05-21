@@ -8,6 +8,9 @@
 ║  📢 القناة: @fz_z_Z                                          ║
 ╚══════════════════════════════════════════════════════════════╝
 """
+import requests
+
+from bs4 import BeautifulSoup
 
 import os
 
