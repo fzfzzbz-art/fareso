@@ -137,16 +137,16 @@ def _env_required(name: str):
     return value
 
 _DEFAULTS = {
-    "USER_AGENT": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36"
     "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 0)),
     "SITE_URL": "https://www.ivasms.com",
-    "SITE_COOKIE": os.environ.get("SITE_COOKIE"), # تأكد من وضعه في Render
-    "USER_AGENT": "Mozilla/5.0 (Linux; Android 10; SM-G981B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/80.0.3987.162 Mobile Safari/537.36",
-    "SITE_COOKIE_FILE": "runtime_cookies.json",
+    "SITE_COOKIE": os.environ.get("SITE_COOKIE"),
+    "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "SITE_COOKIE_FILE": "", 
     "SITE_EMAIL": "",
     "SITE_PASS": ""
 }
+
 
 
 
