@@ -1,39 +1,145 @@
-'use strict';
-
-const fs = require('fs');
-const fsp = require('fs/promises');
-const path = require('path');
-const http = require('http');
-const crypto = require('crypto');
-const dotenv = require('dotenv');
-const axiosLib = require('axios');
-const { wrapper } = require('axios-cookiejar-support');
-const { CookieJar } = require('tough-cookie');
-const cheerio = require('cheerio');
 const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
+const http = require('http');
 
-dotenv.config();
+// --- الإعدادات الأساسية ---
+const token = 'YOUR_TELEGRAM_BOT_TOKEN'; // ضع توكن البوت هنا
+const api_key = 'YOUR_SMS_SERVICE_API_KEY'; // مفتاح API موقع الأرقام
+const channel_id = '@fz_z_Z'; // معرف القناة للاشتراك الإجباري
+const admin_wallet = 'THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc';
 
-const Environment = {
-  BOT_TOKEN: process.env.BOT_TOKEN || '8674488533:AAGAg2PBEOmrCs00cxMdBeGNZp00a1z0Xb8',
-  ADMIN_ID: Number(process.env.ADMIN_ID || '7231690686'),
-  SITE_BASE_URL: process.env.SITE_BASE_URL || 'https://basha.cc',
-  SITE_LOGIN_URL: process.env.SITE_LOGIN_URL || 'https://basha.cc/login',
-  SITE_HOME_URL: process.env.SITE_HOME_URL || 'https://basha.cc/home',
-  SITE_NUMBERS_PAGE: process.env.SITE_NUMBERS_PAGE || 'https://basha.cc/test/numbers',
-  SITE_NUMBERS_DATA_URL: process.env.SITE_NUMBERS_DATA_URL || 'https://basha.cc/test/numbers/data',
-  SITE_EMAIL: process.env.SITE_EMAIL || 'ftatty88@gmail.com',
-  SITE_PASS: process.env.SITE_PASS || '123456789ff',
-  AUTO_SYNC_SECONDS: Math.max(60, Number(process.env.AUTO_SYNC_SECONDS || '300')),
-  HOST: process.env.HOST || '0.0.0.0',
-  PORT: Number(process.env.PORT || '8080'),
-  REQUEST_TIMEOUT_MS: Math.max(10000, Number(process.env.REQUEST_TIMEOUT_MS || '45000')),
-  MAX_PAGE_SIZE: Math.max(100, Number(process.env.MAX_PAGE_SIZE || '500')),
-  MAX_ROWS: Math.max(100, Number(process.env.MAX_ROWS || '5000')),
-  SELF_TEST: String(process.env.SELF_TEST || '').trim() === '1',
-  TZ: process.env.TZ || 'UTC',
+const bot = new TelegramBot(token, { polling: true });
+
+// --- كود عدم توقف البوت (Keep-alive) ---
+http.createServer((req, res) => {
+    res.write("Bot is Running!");
+    res.end();
+}).listen(8080);
+
+// --- التحقق من الاشتراك الإجباري ---
+async function checkSubscription(userId) {
+    try {
+        const member = await bot.getChatMember(channel_id, userId);
+        return ['creator', 'administrator', 'member'].includes(member.status);
+    } catch (e) {
+        return false;
+    }
+}
+
+// --- القوائم والبيانات ---
+const platforms = {
+    'wa': 'واتساب ✅',
+    'tg': 'تلجرام ✈️',
+    'ig': 'إنستقرام 📸',
+    'fb': 'فيسبوك 👤'
 };
 
+const countries = {
+    '0': 'روسيا 🇷🇺',
+    '1': 'أوكرانيا 🇺🇦',
+    '6': 'إندونيسيا 🇮🇩',
+    '13': 'البرازيل 🇧🇷',
+    '22': 'الهند 🇮🇳'
+};
+
+// --- التعامل مع أمر /start ---
+bot.onText(/\/start/, async (msg) => {
+    const chatId = msg.chat.id;
+    const isSubscribed = await checkSubscription(chatId);
+
+    if (!isSubscribed) {
+        return bot.sendMessage(chatId, `⚠️ يجب عليك الاشتراك في قناة البوت أولاً لتتمكن من استخدامه:\n${channel_id}`, {
+            reply_markup: {
+                inline_keyboard: [[{ text: "اضغط هنا للاشتراك", url: `https://t.me/${channel_id.replace('@', '')}` }]]
+            }
+        });
+    }
+
+    const keyboard = Object.entries(platforms).map(([code, name]) => [{ text: name, callback_data: `plat_${code}` }]);
+    bot.sendMessage(chatId, "مرحباً بك في بوت الأرقام 🤖\n\nالرجاء اختيار المنصة التي تريد رقماً لها:", {
+        reply_markup: { inline_keyboard: keyboard }
+    });
+});
+
+// --- معالجة الضغط على الأزرار ---
+bot.on('callback_query', async (query) => {
+    const chatId = query.message.chat.id;
+    const data = query.data;
+
+    // اختيار المنصة
+    if (data.startsWith('plat_')) {
+        const platCode = data.split('_')[1];
+        const countryKeyboard = Object.entries(countries).map(([id, name]) => [{ text: name, callback_data: `get_${platCode}_${id}` }]);
+        
+        bot.editMessageText("تم اختيار المنصة. الآن اختر الدولة:", {
+            chat_id: chatId,
+            message_id: query.message.message_id,
+            reply_markup: { inline_keyboard: countryKeyboard }
+        });
+    }
+
+    // طلب الرقم وتغييره
+    if (data.startsWith('get_')) {
+        const [, plat, country] = data.split('_');
+        
+        try {
+            // ملاحظة: هذا الرابط مثال لموقع sms-activate، قم بتغييره حسب موقعك
+            const response = await axios.get(`https://api.sms-activate.org/stst.php?api_key=${api_key}&action=getNumber&service=${plat}&country=${country}`);
+            
+            if (response.data.includes('ACCESS_NUMBER')) {
+                const [ , id, number] = response.data.split(':');
+                
+                const msgText = `✅ تم تجهيز رقمك:\n\n` +
+                                `📱 الرقم: \`${number}\` (اضغط للنسخ)\n` +
+                                `🌐 المنصة: ${platforms[plat]}\n` +
+                                `💰 المحفظة المدعومة: \`${admin_wallet}\`\n\n` +
+                                `انتظر وصول الكود هنا تلقائياً...`;
+
+                bot.editMessageText(msgText, {
+                    chat_id: chatId,
+                    message_id: query.message.message_id,
+                    parse_mode: 'Markdown',
+                    reply_markup: {
+                        inline_keyboard: [
+                            [{ text: "🔄 تغيير الرقم", callback_data: `get_${plat}_${country}` }],
+                            [{ text: "❌ إلغاء العملية", callback_data: `cancel_${id}` }]
+                        ]
+                    }
+                });
+
+                // بدء فحص وصول الكود
+                startCheckCode(chatId, id);
+
+            } else {
+                bot.answerCallbackQuery(query.id, { text: "عذراً، لا توجد أرقام متوفرة حالياً لهذه الدولة.", show_alert: true });
+            }
+        } catch (error) {
+            bot.sendMessage(chatId, "حدث خطأ في الاتصال بالمزود.");
+        }
+    }
+});
+
+// --- وظيفة فحص الكود تلقائياً ---
+async function startCheckCode(chatId, activationId) {
+    let checkInterval = setInterval(async () => {
+        try {
+            const res = await axios.get(`https://api.sms-activate.org/stst.php?api_key=${api_key}&action=getStatus&id=${activationId}`);
+            
+            if (res.data.includes('STATUS_OK')) {
+                const code = res.data.split(':')[1];
+                bot.sendMessage(chatId, `📩 وصل كود التفعيل الخاص بك:\n\n*${code}*`, { parse_mode: 'Markdown' });
+                clearInterval(checkInterval);
+            } else if (res.data === 'STATUS_CANCEL') {
+                clearInterval(checkInterval);
+            }
+        } catch (e) {
+            console.log("Error checking code");
+        }
+    }, 5000); // يفحص كل 5 ثواني
+
+    // توقف الفحص بعد 15 دقيقة تلقائياً
+    setTimeout(() => clearInterval(checkInterval), 900000);
+}
 const EMBEDDED_SITE_COOKIES = [
   {
     name: '_ga',
