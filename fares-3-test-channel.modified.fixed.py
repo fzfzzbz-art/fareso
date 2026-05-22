@@ -240,6 +240,7 @@ MAX_NUMBERS_PER_COUNTRY_BUCKET = max(1000, int(_get("MAX_NUMBERS_PER_COUNTRY_BUC
 
 AUTO_SYNC_NUMBERS = _env_flag("AUTO_SYNC_NUMBERS", False)
 AUTO_FIX_SITE_TELEGRAM_SETUP = _env_flag("AUTO_FIX_SITE_TELEGRAM_SETUP", True)
+SITE_TELEGRAM_SETUP_STRICT = _env_flag("SITE_TELEGRAM_SETUP_STRICT", False)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -795,6 +796,13 @@ def _try_fix_site_telegram_setup(session: requests.Session, setup_resp: Optional
     except Exception as setup_fix_err:
         logger.warning(f"telegram setup auto-fix warning: {setup_fix_err}")
     return False
+
+
+def _handle_site_telegram_setup_gate(context: str, err: Exception) -> bool:
+    if SITE_TELEGRAM_SETUP_STRICT:
+        return False
+    logger.warning(f"⚠️ تم تجاوز قفل Telegram Setup مؤقتاً أثناء {context}: {err}")
+    return True
 
 
 def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
@@ -1675,8 +1683,9 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
 
     try:
         collected.extend(_collect_codes_from_messages_pages(session))
-    except SiteTelegramSetupRequired:
-        raise
+    except SiteTelegramSetupRequired as setup_err:
+        if not _handle_site_telegram_setup_gate(f'messages pages scan for {target}', setup_err):
+            raise
     except Exception as messages_err:
         logger.debug(f'messages pages scan skipped for {target}: {messages_err}')
 
@@ -1696,8 +1705,9 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
             page_html = getattr(page_resp, 'text', '') or ''
             page_tokens[label] = _extract_csrf_token(page_html) or ''
             collected.extend(_extract_live_code_rows_from_html(page_html, source=f'{label}_page'))
-        except SiteTelegramSetupRequired:
-            raise
+        except SiteTelegramSetupRequired as setup_err:
+            if not _handle_site_telegram_setup_gate(f'live code page probe {label}', setup_err):
+                raise
         except Exception as page_err:
             logger.debug(f'live code page probe failed for {label}: {page_err}')
 
@@ -1735,8 +1745,9 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
                     collected.extend(_extract_live_code_rows_from_payload(payload, source=label))
             else:
                 collected.extend(_extract_live_code_rows_from_html(getattr(resp, 'text', '') or '', source=label))
-        except SiteTelegramSetupRequired:
-            raise
+        except SiteTelegramSetupRequired as setup_err:
+            if not _handle_site_telegram_setup_gate(f'live code ajax probe {label}', setup_err):
+                raise
         except Exception as ajax_err:
             logger.debug(f'live code ajax probe failed for {label}: {ajax_err}')
 
@@ -1777,8 +1788,10 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
 
     try:
         live_candidate = _fetch_latest_live_code_for_number(target, platform_hint)
-    except SiteTelegramSetupRequired:
-        raise
+    except SiteTelegramSetupRequired as setup_err:
+        if not _handle_site_telegram_setup_gate(f'live code lookup for {target}', setup_err):
+            raise
+        live_candidate = None
     if live_candidate:
         _cache_code_for_number(target, platform_hint, live_candidate)
         return live_candidate
@@ -1789,14 +1802,20 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
             "X-Requested-With": "XMLHttpRequest",
             "Referer": f"{SITE_URL}/portal/sms/received",
         })
-        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20)
-        csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
-        if not csrf:
-            logger.warning("تعذر استخراج CSRF token من صفحة الرسائل")
+        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(page_resp, "text", "") or "", getattr(page_resp, "url", "") or ""):
+            if _try_fix_site_telegram_setup(session, page_resp):
+                page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(page_resp, "text", "") or "", getattr(page_resp, "url", "") or ""):
+            logger.warning("⚠️ portal/sms/received ما زال يحوّل إلى Telegram Setup، سيتم الاعتماد على المصادر البديلة/الكاش فقط")
         else:
-            today = datetime.date.today()
-            windows = [7, 30, 90]
-            hint = _normalize_platform(platform_hint).lower() if platform_hint else ""
+            csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
+            if not csrf:
+                logger.warning("تعذر استخراج CSRF token من صفحة الرسائل")
+            else:
+                today = datetime.date.today()
+                windows = [7, 30, 90]
+                hint = _normalize_platform(platform_hint).lower() if platform_hint else ""
 
             for days in windows:
                 start = today - datetime.timedelta(days=days)
@@ -1864,8 +1883,9 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
                         })
                         _cache_code_for_number(target, platform_hint, latest)
                         return latest
-    except SiteTelegramSetupRequired:
-        raise
+    except SiteTelegramSetupRequired as setup_err:
+        if not _handle_site_telegram_setup_gate(f'portal sms lookup for {target}', setup_err):
+            raise
     except Exception as sms_err:
         logger.warning(f"فشل فحص الكود للرقم {number}: {sms_err}")
 
@@ -8453,7 +8473,13 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
             "X-Requested-With": "XMLHttpRequest",
             "Referer": f"{SITE_URL}/portal/sms/received",
         })
-        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=15)
+        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=15, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(page_resp, "text", "") or "", getattr(page_resp, "url", "") or ""):
+            if _try_fix_site_telegram_setup(session, page_resp):
+                page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=15, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(page_resp, "text", "") or "", getattr(page_resp, "url", "") or ""):
+            logger.warning("⚠️ تخطّي مزامنة sms_ranges لأن الموقع ما زال يحوّل إلى Telegram Setup")
+            return collected
         csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
         if not csrf:
             return collected
@@ -9022,10 +9048,19 @@ def fetch_live_test_codes(force_refresh: bool = False):
     try:
         session = _build_site_session()
         url = f"{SITE_URL}/portal/live/test-system/get"
-        resp = session.post(url, timeout=20)
+        resp = session.post(url, timeout=20, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(resp, "text", "") or "", getattr(resp, "url", "") or ""):
+            if _try_fix_site_telegram_setup(session, resp):
+                resp = session.post(url, timeout=20, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(resp, "text", "") or "", getattr(resp, "url", "") or ""):
+            logger.warning("⚠️ تم تجاوز fetch_live_test_codes لأن الموقع حوّل الطلب إلى Telegram Setup")
+            return results
         if resp.status_code != 200:
             return results
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            return results
         rows = data.get('data', [])
         seen = set()
         for row in rows:
