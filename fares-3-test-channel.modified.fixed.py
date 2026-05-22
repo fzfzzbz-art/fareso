@@ -143,16 +143,25 @@ _DEFAULTS = {
     "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
 
-    # روابط المواقع (تم التحديث لموقع باشا)
+    # روابط الموقع الحالية (Basha IPRN VAS)
     "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
+    "HOME_URL": os.environ.get("HOME_URL", "https://basha.cc/home"),
     "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
-    "MESSAGES_URL": os.environ.get("MESSAGES_URL", "https://basha.cc/my/messages"),
-    
-    # بيانات الحساب (تُقرأ من Render)
+    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
+    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
+    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers"),
+    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
+    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
+    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
+    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
+    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
+    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
+
+    # بيانات الحساب (تُقرأ من البيئة)
     "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
     "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
     "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
-    
+
     # الكوكيز والتمويه
     "SITE_COOKIE": os.environ.get("SITE_COOKIE", ""),
     "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -187,10 +196,17 @@ BOT_TOKEN        = _get("BOT_TOKEN")
 ADMIN_ID         = int(_get("ADMIN_ID", "0") or "0")
 
 SITE_URL         = _get("SITE_URL", "https://basha.cc")
-
+HOME_URL         = _get("HOME_URL", f"{SITE_URL}/home")
 RANGES_URL       = _get("RANGES_URL", f"{SITE_URL}/my/ranges")
-
-MESSAGES_URL     = _get("MESSAGES_URL", f"{SITE_URL}/my/messages")
+MY_RANGES_DATA_URL = _get("MY_RANGES_DATA_URL", f"{SITE_URL}/my/ranges/data")
+MY_NUMBERS_URL   = _get("MY_NUMBERS_URL", f"{SITE_URL}/my/numbers")
+MY_NUMBERS_DATA_URL = _get("MY_NUMBERS_DATA_URL", MY_NUMBERS_URL)
+MY_MESSAGES_URL  = _get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages")
+MY_MESSAGES_DATA_URL = _get("MY_MESSAGES_DATA_URL", f"{SITE_URL}/my/messages/data")
+TEST_MESSAGES_URL = _get("TEST_MESSAGES_URL", f"{SITE_URL}/test/messages")
+TEST_MESSAGES_DATA_URL = _get("TEST_MESSAGES_DATA_URL", f"{SITE_URL}/test/messages/data")
+TEST_NUMBERS_URL = _get("TEST_NUMBERS_URL", f"{SITE_URL}/test/numbers")
+TEST_NUMBERS_DATA_URL = _get("TEST_NUMBERS_DATA_URL", f"{SITE_URL}/test/numbers/data")
 
 API_TOKEN        = _get("API_TOKEN", "")
 
@@ -693,19 +709,20 @@ def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
     page = (getattr(resp, "text", "") or "").lower()
     auth_markers = [
         "logout",
-        "account code",
         "my numbers",
         "my ranges",
-        "my messages",
-        "client active sms",
-        "my sms statistics",
-        "portal/profile",
-        "/my/ranges",
-        "/my/messages",
+        "received sms",
+        "my statistics",
+        "my invoices",
+        "test sms",
+        "test numbers",
+        "https://basha.cc/my/ranges",
+        "https://basha.cc/my/numbers",
+        "https://basha.cc/my/messages",
     ]
-    if any(marker in final_url for marker in ("/portal", "/portal/profile", "/my/ranges", "/my/messages")):
+    if any(marker in final_url for marker in ("/home", "/my/", "/profile", "/test/")):
         return True
-    return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 1
+    return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 2
 
 def _login_site_with_credentials(session: requests.Session) -> bool:
     """محاولة تسجيل الدخول بالبريد/كلمة المرور وتحديث الكوكيز تلقائياً."""
@@ -850,21 +867,14 @@ def _build_site_session() -> requests.Session:
     if not loaded_from_file and not restored_from_bootstrap:
         _apply_site_cookie(session, SITE_COOKIE or "")
 
-    probe_urls = [
-        RANGES_URL,
-        MESSAGES_URL,
-        f"{SITE_URL}/portal",
-        f"{SITE_URL}/portal/profile",
-    ]
-    for probe_url in list(dict.fromkeys([str(url or '').strip() for url in probe_urls if str(url or '').strip()])):
-        try:
-            probe = session.get(probe_url, timeout=12, allow_redirects=True)
-            if _is_authenticated_response(probe):
-                logger.info(f"✅ تم التحقق من جلسة الموقع بنجاح عبر {probe_url}")
-                _store_site_session_bootstrap(session)
-                return session
-        except Exception as probe_err:
-            logger.warning(f"Site probe warning [{probe_url}]: {probe_err}")
+    try:
+        probe = session.get(RANGES_URL, timeout=12, allow_redirects=True)
+        if _is_authenticated_response(probe):
+            logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
+            _store_site_session_bootstrap(session)
+            return session
+    except Exception as probe_err:
+        logger.warning(f"Site probe warning: {probe_err}")
 
     if SITE_EMAIL and SITE_PASS:
         if _login_site_with_credentials(session):
@@ -1164,18 +1174,6 @@ def _extract_csrf_token(page_html: str) -> str:
             return match.group(1).strip()
     return ""
 
-def _site_url_candidates(*urls: str) -> List[str]:
-    found: List[str] = []
-    seen = set()
-    for raw_url in urls:
-        clean_url = str(raw_url or "").strip()
-        if not clean_url or clean_url in seen:
-            continue
-        seen.add(clean_url)
-        found.append(clean_url)
-    return found
-
-
 def _strip_html_text(value: str) -> str:
     text_value = re.sub(r"<br\s*/?>", "\n", str(value or ""), flags=re.IGNORECASE)
     text_value = re.sub(r"<[^>]+>", " ", text_value)
@@ -1183,53 +1181,20 @@ def _strip_html_text(value: str) -> str:
     return re.sub(r"\s+", " ", text_value).strip()
 
 def _extract_ranges_from_summary(summary_html: str) -> List[str]:
-    found: List[str] = []
-    raw_html = str(summary_html or "")
-    if not raw_html:
-        return found
-
-    patterns = [
-        r'toggleRange\(\s*[\'"]([^\'"]+)[\'"]',
-        r'data-range\s*=\s*[\'"]([^\'"]+)[\'"]',
-        r'range\s*[:=]\s*[\'"]([^\'"]+)[\'"]',
-        r'name\s*=\s*[\'"]range[\'"][^>]*value\s*=\s*[\'"]([^\'"]+)[\'"]',
-    ]
-    for pattern in patterns:
-        for match in re.findall(pattern, raw_html, flags=re.IGNORECASE):
-            candidate = _strip_html_text(match)
-            if candidate and candidate not in found:
-                found.append(candidate)
-
-    link_matches = re.findall(r'<a[^>]+href=[\"\']([^\"\']+)[\"\'][^>]*>(.*?)</a>', raw_html, flags=re.IGNORECASE | re.DOTALL)
-    for href, label in link_matches:
-        href_text = str(href or "").strip()
-        label_text = _strip_html_text(label)
-        if "/range" in href_text.lower() or "range=" in href_text.lower() or "/my/ranges" in href_text.lower():
-            candidate = label_text or urllib.parse.unquote(href_text.rsplit("/", 1)[-1].split("?", 1)[0])
-            candidate = _strip_html_text(candidate)
-            if candidate and candidate not in found:
-                found.append(candidate)
+    found = []
+    for match in re.finditer(r"toggleRange\('([^']+)'", summary_html or ""):
+        range_name = match.group(1).strip()
+        if range_name and range_name not in found:
+            found.append(range_name)
     return found
 
-
 def _extract_number_rows(range_html: str) -> List[str]:
-    found: List[str] = []
-    raw_html = str(range_html or "")
-    if not raw_html:
-        return found
-
-    for match in re.finditer(r'toggleNum\w*\(\s*[\'"]([^\'"]+)[\'"]', raw_html, flags=re.IGNORECASE):
+    found = []
+    for match in re.finditer(r"toggleNum\w*\('([^']+)'", range_html or ""):
         number = _normalize_number(match.group(1))
         if number and number not in found:
             found.append(number)
-
-    for number in _extract_phone_candidates_from_text(raw_html):
-        normalized = _normalize_number(number)
-        if normalized and normalized not in found:
-            found.append(normalized)
-
     return found
-
 
 def _extract_sms_entries(sms_html: str) -> List[Dict]:
     """
@@ -1528,7 +1493,6 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
 
     page_tokens: Dict[str, str] = {}
     page_jobs = [
-        ('messages', MESSAGES_URL),
         ('my_sms', f'{SITE_URL}/portal/live/my_sms'),
         ('test_system', f'{SITE_URL}/portal/live/test-system'),
     ]
@@ -1614,9 +1578,9 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
         session = _build_site_session()
         session.headers.update({
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": MESSAGES_URL,
+            "Referer": f"{SITE_URL}/portal/sms/received",
         })
-        page_resp = session.get(MESSAGES_URL, timeout=20)
+        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20)
         csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
         if not csrf:
             logger.warning("تعذر استخراج CSRF token من صفحة الرسائل")
@@ -1796,15 +1760,13 @@ def _smart_scrape_homepage() -> dict:
 
         session = _build_site_session()
 
-        # الصفحات المرشحة للسحب
+        # الصفحات المرشحة للسحب بعد تحديث مسارات الموقع
         candidate_pages = [
+            MY_NUMBERS_URL,
             RANGES_URL,
-            MESSAGES_URL,
-            f"{SITE_URL}/portal/numbers",
-            f"{SITE_URL}/portal/live/my_sms",
-            f"{SITE_URL}/portal/sms/received",
-            f"{SITE_URL}/portal/profile",
-            f"{SITE_URL}/portal",
+            MY_MESSAGES_URL,
+            HOME_URL,
+            f"{SITE_URL}/profile",
             f"{SITE_URL}/",
         ]
 
@@ -1901,54 +1863,18 @@ def _portal_numbers_datatable_params(length: int = 200, start: int = 0, draw: in
         "draw": str(max(1, int(draw or 1))),
         "start": str(max(0, int(start or 0))),
         "length": str(max(1, int(length or 200))),
-        "columns[0][data]": "number_id",
-        "columns[0][name]": "id",
+        "columns[0][data]": "range_name",
+        "columns[0][name]": "range_name",
         "columns[0][searchable]": "true",
-        "columns[0][orderable]": "false",
+        "columns[0][orderable]": "true",
         "columns[0][search][value]": "",
         "columns[0][search][regex]": "false",
-        "columns[1][data]": "Number",
-        "columns[1][name]": "Number",
+        "columns[1][data]": "full_number",
+        "columns[1][name]": "full_number",
         "columns[1][searchable]": "true",
         "columns[1][orderable]": "true",
         "columns[1][search][value]": "",
         "columns[1][search][regex]": "false",
-        "columns[2][data]": "range",
-        "columns[2][name]": "range",
-        "columns[2][searchable]": "true",
-        "columns[2][orderable]": "true",
-        "columns[2][search][value]": "",
-        "columns[2][search][regex]": "false",
-        "columns[3][data]": "A2P",
-        "columns[3][name]": "A2P",
-        "columns[3][searchable]": "true",
-        "columns[3][orderable]": "true",
-        "columns[3][search][value]": "",
-        "columns[3][search][regex]": "false",
-        "columns[4][data]": "LimitA2P",
-        "columns[4][name]": "LimitA2P",
-        "columns[4][searchable]": "true",
-        "columns[4][orderable]": "true",
-        "columns[4][search][value]": "",
-        "columns[4][search][regex]": "false",
-        "columns[5][data]": "limit_cli_a2p",
-        "columns[5][name]": "limit_cli_a2p",
-        "columns[5][searchable]": "true",
-        "columns[5][orderable]": "true",
-        "columns[5][search][value]": "",
-        "columns[5][search][regex]": "false",
-        "columns[6][data]": "limit_cli_did_a2p",
-        "columns[6][name]": "limit_cli_did_a2p",
-        "columns[6][searchable]": "true",
-        "columns[6][orderable]": "true",
-        "columns[6][search][value]": "",
-        "columns[6][search][regex]": "false",
-        "columns[7][data]": "action",
-        "columns[7][name]": "action",
-        "columns[7][searchable]": "false",
-        "columns[7][orderable]": "false",
-        "columns[7][search][value]": "",
-        "columns[7][search][regex]": "false",
         "order[0][column]": "1",
         "order[0][dir]": "desc",
         "search[value]": "",
@@ -1956,18 +1882,103 @@ def _portal_numbers_datatable_params(length: int = 200, start: int = 0, draw: in
     }
 
 
+def _ranges_datatable_params(length: int = 100, start: int = 0, draw: int = 1) -> dict:
+    return {
+        "draw": str(max(1, int(draw or 1))),
+        "start": str(max(0, int(start or 0))),
+        "length": str(max(1, int(length or 100))),
+        "columns[0][data]": "0",
+        "columns[0][name]": "action",
+        "columns[0][searchable]": "false",
+        "columns[0][orderable]": "false",
+        "columns[0][search][value]": "",
+        "columns[0][search][regex]": "false",
+        "columns[1][data]": "1",
+        "columns[1][name]": "range_name",
+        "columns[1][searchable]": "true",
+        "columns[1][orderable]": "true",
+        "columns[1][search][value]": "",
+        "columns[1][search][regex]": "false",
+        "columns[2][data]": "2",
+        "columns[2][name]": "total_numbers",
+        "columns[2][searchable]": "true",
+        "columns[2][orderable]": "true",
+        "columns[2][search][value]": "",
+        "columns[2][search][regex]": "false",
+        "columns[3][data]": "3",
+        "columns[3][name]": "payment_term",
+        "columns[3][searchable]": "true",
+        "columns[3][orderable]": "true",
+        "columns[3][search][value]": "",
+        "columns[3][search][regex]": "false",
+        "order[0][column]": "1",
+        "order[0][dir]": "asc",
+        "search[value]": "",
+        "search[regex]": "false",
+    }
+
+
+def _fetch_my_ranges_summary(session: requests.Session) -> Dict[str, Dict[str, str]]:
+    summary: Dict[str, Dict[str, str]] = {}
+    try:
+        resp = session.get(
+            MY_RANGES_DATA_URL,
+            params=_ranges_datatable_params(),
+            headers={
+                "Accept": "application/json, text/javascript, */*; q=0.01",
+                "X-Requested-With": "XMLHttpRequest",
+                "Referer": RANGES_URL,
+            },
+            timeout=15,
+            allow_redirects=True,
+        )
+        if resp.status_code != 200 or "json" not in (resp.headers.get("content-type", "").lower()):
+            return summary
+        payload = resp.json()
+        for row in payload.get("data", []) or []:
+            if isinstance(row, (list, tuple)):
+                action_html = str(row[0] if len(row) > 0 else "")
+                range_name = _strip_html_text(row[1] if len(row) > 1 else "")
+                total_numbers = _strip_html_text(row[2] if len(row) > 2 else "")
+                payment_term = _strip_html_text(row[3] if len(row) > 3 else "")
+            elif isinstance(row, dict):
+                action_html = str(row.get("action") or row.get(0) or row.get("0") or "")
+                range_name = _strip_html_text(row.get("range_name") or row.get(1) or row.get("1") or "")
+                total_numbers = _strip_html_text(row.get("total_numbers") or row.get(2) or row.get("2") or "")
+                payment_term = _strip_html_text(row.get("payment_term") or row.get(3) or row.get("3") or "")
+            else:
+                continue
+            range_key = re.sub(r"\s+", " ", range_name).strip().lower()
+            if not range_key:
+                continue
+            links = re.findall(r'href=["\']([^"\']+)["\']', action_html, flags=re.IGNORECASE)
+            download_url = links[0] if len(links) > 0 else ""
+            revoke_url = links[1] if len(links) > 1 else ""
+            summary[range_key] = {
+                "range_name": range_name,
+                "total_numbers": total_numbers,
+                "payment_term": payment_term,
+                "download_url": download_url,
+                "revoke_url": revoke_url,
+            }
+    except Exception as ranges_err:
+        logger.debug(f"my ranges summary fetch failed: {ranges_err}")
+    return summary
+
+
 def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
     collected: List[Dict] = []
     seen_numbers = set()
-    endpoint = f"{SITE_URL}/portal/numbers"
+    endpoint = MY_NUMBERS_DATA_URL
     page_size = max(100, min(1000, int(_get("SITE_ADD_PORTAL_PAGE_SIZE", "300") or "300")))
     max_pages = max(1, min(25, int(_get("SITE_ADD_PORTAL_MAX_PAGES", "8") or "8")))
     soft_timeout = max(6.0, float(_get("SITE_ADD_PORTAL_SOFT_TIMEOUT_SECONDS", "12") or "12"))
     started_at = time.time()
+    ranges_summary = _fetch_my_ranges_summary(session)
     try:
         for page_idx in range(max_pages):
             if (time.time() - started_at) >= soft_timeout:
-                logger.warning(f"Portal datatable fetch stopped after {soft_timeout}s to keep bot responsive")
+                logger.warning(f"My Numbers datatable fetch stopped after {soft_timeout}s to keep bot responsive")
                 break
             start = page_idx * page_size
             resp = session.get(
@@ -1976,10 +1987,12 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
                 headers={
                     "Accept": "application/json, text/javascript, */*; q=0.01",
                     "X-Requested-With": "XMLHttpRequest",
+                    "Referer": MY_NUMBERS_URL,
                 },
                 timeout=min(10, max(6, int(soft_timeout))),
+                allow_redirects=True,
             )
-            logger.info(f"Portal datatable {endpoint} page={page_idx + 1} start={start} → {resp.status_code}")
+            logger.info(f"My Numbers datatable {endpoint} page={page_idx + 1} start={start} → {resp.status_code}")
             if resp.status_code != 200 or "json" not in (resp.headers.get("content-type", "").lower()):
                 break
 
@@ -1991,28 +2004,37 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
             for item in rows:
                 if not isinstance(item, dict):
                     continue
-                number = _normalize_number(str(item.get("Number") or item.get("number") or item.get("phone") or "").strip())
+                number = _normalize_number(str(item.get("full_number") or item.get("Number") or item.get("number") or item.get("phone") or "").strip())
                 if not number or number in seen_numbers:
                     continue
                 seen_numbers.add(number)
+                range_name = _strip_html_text(str(item.get("range_name") or item.get("range") or item.get("service") or "").strip())
+                range_meta = ranges_summary.get(re.sub(r"\s+", " ", range_name).strip().lower(), {}) if range_name else {}
+                payment_term = _strip_html_text(item.get("payment_term") or range_meta.get("payment_term") or "")
                 platform = _guess_platform_from_payload(
-                    item.get("range"),
+                    range_name,
                     item.get("platform"),
                     item.get("service"),
-                    item.get("A2P"),
                     item,
                 ) or GENERAL_PLATFORM_NAME
                 collected.append({
                     "number": number,
                     "platform": platform,
-                    "site_section": str(item.get("range") or item.get("platform") or item.get("service") or "").strip(),
-                    "source": "portal_json",
+                    "site_section": range_name,
+                    "source": "my_numbers_json",
                     "added_at": time.ctime(),
                     "country_name": str(item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
                     "country_name_ar": str(item.get("country_name_ar") or item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
                     "country": str(item.get("country") or item.get("country_name") or "").strip(),
                     "country_flag": str(item.get("country_flag") or "").strip(),
                     "country_code": str(item.get("country_code") or item.get("countryCode") or "").strip(),
+                    "raw_platform": range_name,
+                    "range_name": range_meta.get("range_name") or range_name,
+                    "payment_term": payment_term,
+                    "range_total_numbers": str(range_meta.get("total_numbers") or item.get("range_total_numbers") or "").strip(),
+                    "range_download_url": str(range_meta.get("download_url") or "").strip(),
+                    "range_revoke_url": str(range_meta.get("revoke_url") or "").strip(),
+                    "range_id": str(item.get("range_id") or "").strip(),
                 })
 
             total_rows = int(payload.get("recordsFiltered") or payload.get("recordsTotal") or 0)
@@ -2021,7 +2043,7 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
             if len(rows) < page_size:
                 break
     except Exception as portal_err:
-        logger.warning(f"Portal datatable fetch failed: {portal_err}")
+        logger.warning(f"My Numbers datatable fetch failed: {portal_err}")
     return _dedupe_numbers(collected)
 
 def _find_newly_added_numbers(old_items: List[Dict], new_items: List[Dict]) -> List[Dict]:
@@ -5395,8 +5417,8 @@ SITE_ADD_FAST_SOURCE_TIMEOUT_SECONDS = max(6.0, float(str(_get("SITE_ADD_FAST_SO
 SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS = max(12.0, float(str(_get("SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS", "18") or "18").strip() or "18"))
 _site_add_jobs_lock = threading.RLock()
 _site_add_jobs: set = set()
-SITE_ADD_SOURCE_PAGE = RANGES_URL
-SITE_ADD_SOURCE_LABEL = "ranges"
+SITE_ADD_SOURCE_PAGE = MY_NUMBERS_URL
+SITE_ADD_SOURCE_LABEL = "my_numbers"
 
 
 def _merge_site_add_datasets(*datasets: Dict) -> Dict:
@@ -5619,7 +5641,7 @@ def _extract_phone_candidates_from_text(raw_text: str) -> List[str]:
 def _extract_live_my_sms_rows_from_payload(payload: Any, source: str = 'live_my_sms_json') -> List[Dict]:
     rows: List[Dict] = []
     seen = set()
-    candidate_keys = ('number', 'Number', 'phone', 'mobile', 'msisdn', 'full_number', 'tel', 'did', 'cli', 'sender', 'line')
+    candidate_keys = ('number', 'Number', 'phone', 'mobile', 'msisdn', 'full_number', 'fullNumber', 'destination_number', 'source_number', 'range_name', 'tel', 'did', 'cli', 'sender', 'line')
 
     def _numbers_from_row(raw_row: Dict[str, Any]) -> List[str]:
         found_numbers: List[str] = []
@@ -5699,36 +5721,14 @@ def _extract_live_my_sms_rows_from_html(page_html: str) -> List[Dict]:
 
 def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) -> List[Dict]:
     session = session or _build_site_session()
-    page_candidates = _site_url_candidates(
-        SITE_ADD_SOURCE_PAGE,
-        RANGES_URL,
-        f'{SITE_URL}/portal/live/my_sms',
-        f'{SITE_URL}/portal/numbers',
-    )
+    page_resp = session.get(SITE_ADD_SOURCE_PAGE, timeout=30, allow_redirects=True)
+    if not _is_authenticated_response(page_resp):
+        raise RuntimeError('تعذر فتح صفحة my_sms. تأكد من الكوكيز أو تسجيل الدخول.')
 
     collected: List[Dict] = []
-    csrf = ''
-    active_page = SITE_ADD_SOURCE_PAGE
-
-    for page_url in page_candidates:
-        try:
-            page_resp = session.get(page_url, timeout=30, allow_redirects=True)
-        except Exception as page_err:
-            logger.debug(f'page probe failed for {page_url}: {page_err}')
-            continue
-        if not _is_authenticated_response(page_resp):
-            continue
-        active_page = page_url
-        page_html = getattr(page_resp, 'text', '') or ''
-        csrf = _extract_csrf_token(page_html) or csrf
-        page_rows = _extract_live_my_sms_rows_from_html(page_html)
-        if page_rows:
-            collected.extend(page_rows)
-            if len(page_rows) >= 3:
-                break
-
-    if not collected and not csrf:
-        raise RuntimeError('تعذر فتح صفحة ranges / numbers. تأكد من الكوكيز أو تسجيل الدخول.')
+    page_html = getattr(page_resp, 'text', '') or ''
+    csrf = _extract_csrf_token(page_html)
+    page_rows = _extract_live_my_sms_rows_from_html(page_html)
 
     ajax_candidates = [
         (f'{SITE_URL}/portal/live/my_sms/get', 'post'),
@@ -5741,7 +5741,7 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
         (f'{SITE_URL}/portal/live/my_sms/table', 'get'),
     ]
     headers = {
-        'Referer': active_page,
+        'Referer': SITE_ADD_SOURCE_PAGE,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json, text/plain, text/html, */*',
     }
@@ -5781,6 +5781,9 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
                     collected.extend(_extract_live_my_sms_rows_from_html(getattr(resp, 'text', '') or ''))
             except Exception as ajax_err:
                 logger.debug(f'live my_sms ajax probe failed for {endpoint} [{method}]: {ajax_err}')
+
+    if page_rows:
+        collected.extend(page_rows)
 
     if not collected:
         try:
@@ -5976,9 +5979,8 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
 
     for attempt_index in range(attempts):
         quick_jobs = [
-            ('my_ranges', SITE_ADD_SOURCE_PAGE, lambda: _fetch_numbers_from_live_my_sms(_build_site_session())),
-            ('portal_numbers', f'{SITE_URL}/portal/numbers', lambda: _fetch_numbers_from_portal(_build_site_session())),
-            ('homepage_scrape', f'{SITE_URL}/portal', _fetch_numbers_from_homepage_scrape),
+            ('my_numbers', MY_NUMBERS_URL, lambda: _fetch_numbers_from_portal(_build_site_session())),
+            ('homepage_scrape', HOME_URL, _fetch_numbers_from_homepage_scrape),
         ]
         all_rows, source_counts, successful_sources, page_urls = _run_source_jobs(quick_jobs, SITE_ADD_FAST_SOURCE_TIMEOUT_SECONDS)
 
@@ -6009,7 +6011,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
         should_try_slow_source = countries_count < SITE_ADD_MIN_COUNTRIES and (refresh or not deduped_quick_rows or countries_count <= 1)
         if should_try_slow_source:
             slow_rows, slow_counts, slow_labels, slow_urls = _run_source_jobs([
-                ('sms_ranges', RANGES_URL, lambda: _fetch_numbers_from_sms_ranges(_build_site_session())),
+                ('sms_ranges', f'{SITE_URL}/portal/sms/received', lambda: _fetch_numbers_from_sms_ranges(_build_site_session())),
             ], SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS)
             if slow_rows:
                 deduped_slow_rows = _dedupe_numbers(slow_rows)
@@ -6023,7 +6025,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
                     'created_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'source_label': ' + '.join(slow_labels) if slow_labels else SITE_ADD_SOURCE_LABEL,
                     'source_counts': slow_counts,
-                    'page_url': ' | '.join(slow_urls) if slow_urls else RANGES_URL,
+                    'page_url': ' | '.join(slow_urls) if slow_urls else f'{SITE_URL}/portal/sms/received',
                     'page_urls': slow_urls,
                     'total_numbers': len(deduped_slow_rows),
                 })
@@ -8228,55 +8230,32 @@ def _register_visible_bot_commands():
         logger.warning(f"تعذر تسجيل أوامر البوت: {cmd_err}")
 
 def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
-    """يسحب الأرقام من صفحة /my/ranges أولاً ثم يرجع للاسكربت القديم عند الحاجة."""
+    """نسخة آمنة: تحدّ من عدد الرينجات والزمن الكلي حتى لا يثقل البوت."""
     collected: List[Dict] = []
     started_at = time.time()
     try:
-        # 1) المصدر الجديد المباشر: /my/ranges
-        try:
-            direct_resp = session.get(RANGES_URL, timeout=20, allow_redirects=True)
-            if _is_authenticated_response(direct_resp):
-                direct_html = getattr(direct_resp, 'text', '') or ''
-                direct_numbers = _extract_number_rows(direct_html)
-                for number in direct_numbers:
-                    collected.append({
-                        'number': number,
-                        'platform': _guess_platform_from_payload('ranges') or GENERAL_PLATFORM_NAME,
-                        'site_section': 'ranges',
-                        'source': 'my_ranges_html',
-                        'added_at': time.ctime(),
-                    })
-                if collected:
-                    return _dedupe_numbers(collected)
-        except Exception as direct_err:
-            logger.warning(f'my/ranges direct fetch failed: {direct_err}')
-
-        # 2) fallback القديم لو الصفحة الجديدة لم تُرجع أرقاماً
         session.headers.update({
-            'X-Requested-With': 'XMLHttpRequest',
-            'Referer': MESSAGES_URL,
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"{SITE_URL}/portal/sms/received",
         })
-        page_resp = session.get(MESSAGES_URL, timeout=15)
-        csrf = _extract_csrf_token(getattr(page_resp, 'text', ''))
+        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=15)
+        csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
         if not csrf:
-            page_resp = session.get(f'{SITE_URL}/portal/sms/received', timeout=15)
-            csrf = _extract_csrf_token(getattr(page_resp, 'text', ''))
-        if not csrf:
-            return _dedupe_numbers(collected)
+            return collected
 
         today = datetime.date.today()
         for days in (7, 30, 90):
             if time.time() - started_at > SITE_SYNC_MAX_SECONDS:
                 logger.warning(
-                    f'SMS range sync stopped بسبب تجاوز المهلة الكلية ({SITE_SYNC_MAX_SECONDS}s)'
+                    f"SMS range sync stopped بسبب تجاوز المهلة الكلية ({SITE_SYNC_MAX_SECONDS}s)"
                 )
                 break
 
             start = today - datetime.timedelta(days=days)
             end = today
             summary_resp = session.post(
-                f'{SITE_URL}/portal/sms/received/getsms',
-                data={'from': start.isoformat(), 'to': end.isoformat(), '_token': csrf},
+                f"{SITE_URL}/portal/sms/received/getsms",
+                data={"from": start.isoformat(), "to": end.isoformat(), "_token": csrf},
                 timeout=18,
             )
             if summary_resp.status_code != 200:
@@ -8292,7 +8271,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
             for idx, range_name in enumerate(ranges, start=1):
                 if time.time() - started_at > SITE_SYNC_MAX_SECONDS:
                     logger.warning(
-                        f'SMS range sync stopped أثناء المعالجة بعد {idx - 1} رينج بسبب المهلة الكلية'
+                        f"SMS range sync stopped أثناء المعالجة بعد {idx - 1} رينج بسبب المهلة الكلية"
                     )
                     return _dedupe_numbers(collected)
 
@@ -8302,17 +8281,17 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
 
                 try:
                     range_resp = session.post(
-                        f'{SITE_URL}/portal/sms/received/getsms/number',
+                        f"{SITE_URL}/portal/sms/received/getsms/number",
                         data={
-                            '_token': csrf,
-                            'start': start.isoformat(),
-                            'end': end.isoformat(),
-                            'range': range_name,
+                            "_token": csrf,
+                            "start": start.isoformat(),
+                            "end": end.isoformat(),
+                            "range": range_name,
                         },
                         timeout=18,
                     )
                 except Exception as range_err:
-                    logger.warning(f'Range fetch failed for {range_name}: {range_err}')
+                    logger.warning(f"Range fetch failed for {range_name}: {range_err}")
                     continue
 
                 if range_resp.status_code != 200:
@@ -8320,17 +8299,17 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
 
                 for number in _extract_number_rows(range_resp.text):
                     collected.append({
-                        'number': number,
-                        'platform': platform,
-                        'site_section': str(range_name).strip(),
-                        'source': 'sms_range',
-                        'added_at': time.ctime(),
+                        "number": number,
+                        "platform": platform,
+                        "site_section": str(range_name).strip(),
+                        "source": "sms_range",
+                        "added_at": time.ctime(),
                     })
 
             if collected:
                 break
     except Exception as sms_range_err:
-        logger.warning(f'SMS range sync error (stability hotfix): {sms_range_err}')
+        logger.warning(f"SMS range sync error (stability hotfix): {sms_range_err}")
     return _dedupe_numbers(collected)
 
 def _notify_code_to_channel(number: str, platform: str, code: str, country_info: Optional[Dict] = None, received_at: str = "", sms_text: str = ""):
