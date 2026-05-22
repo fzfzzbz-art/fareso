@@ -2804,7 +2804,7 @@ def _build_platform_country_markup(platform: str, page: int = 0) -> types.Inline
 def _build_number_actions_markup() -> types.InlineKeyboardMarkup:
     mk = types.InlineKeyboardMarkup(row_width=1)
     mk.add(types.InlineKeyboardButton("🔄 تغيير الرقم", callback_data="num_change"))
-    mk.add(types.InlineKeyboardButton("🔍 فحص الكود", callback_data="num_check"))
+    mk.add(types.InlineKeyboardButton("🔍 فحص الكود الآن", callback_data="num_check"))
     mk.add(types.InlineKeyboardButton("↩️ رجوع للدول", callback_data="num_back_countries"))
     mk.add(types.InlineKeyboardButton("🌐 رجوع للمنصات", callback_data="num_back"))
     return mk
@@ -2908,7 +2908,8 @@ def _render_user_number_card(chat_id: int, user_id: int, message_id: Optional[in
         f"🌍 <b>الدولة:</b> {country_info.get('flag', '🌐')} {country_name}{code_text}\n"
         f"🔢 <b>الرقم الحالي:</b>\n<code>{number_html}</code>\n\n"
         f"📦 <b>ترتيب الرقم داخل الدولة:</b> {index + 1} من {len(avail)}\n"
-        "استخدم الأزرار اللي تحت لتغيير الرقم أو فحص آخر كود."
+        "⚡ <b>المتابعة التلقائية مفعلة:</b> أول ما يوصل الكود البوت هيبعته لك تلقائياً بدون ما تضغط فحص الكود.\n"
+        "ولو حبيت، تقدر تفحصه يدوياً من الزر اللي تحت."
     )
     return _send_or_edit(
         chat_id,
@@ -3494,7 +3495,7 @@ def _platform_exists(platform):
 
 pending_activation = {}
 
-AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", False)
+AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", True)
 AUTO_CODE_WATCH_INTERVAL_SECONDS = max(10.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "15.0") or "15.0").strip() or "15.0"))
 AUTO_CODE_WATCH_TTL_SECONDS = max(600, int(str(_get("AUTO_CODE_WATCH_TTL_SECONDS", "1800") or "1800").strip() or "1800"))
 _auto_code_watch_started = False
