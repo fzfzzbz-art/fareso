@@ -156,6 +156,8 @@ _DEFAULTS = {
     "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
     "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
     "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
+    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/telegram-setup"),
+    "SITE_TELEGRAM_CHAT_ID": os.environ.get("SITE_TELEGRAM_CHAT_ID", os.environ.get("ADMIN_ID", "")),
 
     # بيانات الحساب (تُقرأ من البيئة)
     "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
@@ -207,6 +209,8 @@ TEST_MESSAGES_URL = _get("TEST_MESSAGES_URL", f"{SITE_URL}/test/messages")
 TEST_MESSAGES_DATA_URL = _get("TEST_MESSAGES_DATA_URL", f"{SITE_URL}/test/messages/data")
 TEST_NUMBERS_URL = _get("TEST_NUMBERS_URL", f"{SITE_URL}/test/numbers")
 TEST_NUMBERS_DATA_URL = _get("TEST_NUMBERS_DATA_URL", f"{SITE_URL}/test/numbers/data")
+SITE_TELEGRAM_SETUP_URL = _get("SITE_TELEGRAM_SETUP_URL", f"{SITE_URL}/telegram-setup")
+SITE_TELEGRAM_CHAT_ID = _get("SITE_TELEGRAM_CHAT_ID", str(ADMIN_ID or "")) or str(ADMIN_ID or "")
 
 API_TOKEN        = _get("API_TOKEN", "")
 
@@ -235,6 +239,7 @@ STORAGE_TARGET_GB = max(10240, int(_get("STORAGE_TARGET_GB", "10240") or "10240"
 MAX_NUMBERS_PER_COUNTRY_BUCKET = max(1000, int(_get("MAX_NUMBERS_PER_COUNTRY_BUCKET", "1000000") or "1000000"))
 
 AUTO_SYNC_NUMBERS = _env_flag("AUTO_SYNC_NUMBERS", False)
+AUTO_FIX_SITE_TELEGRAM_SETUP = _env_flag("AUTO_FIX_SITE_TELEGRAM_SETUP", True)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -702,11 +707,103 @@ def _looks_like_guest_page(html: str) -> bool:
     ]
     return sum(marker in page for marker in guest_markers) >= 2
 
+
+class SiteTelegramSetupRequired(RuntimeError):
+    """يرتفع عند إجبار الحساب على صفحة telegram-setup بدلاً من صفحات الرسائل."""
+
+
+def _looks_like_telegram_setup_page(page_html: str, final_url: str = "") -> bool:
+    haystack = f"{final_url or ''}\n{page_html or ''}".lower()
+    markers = [
+        "/telegram-setup",
+        "telegram bot setup",
+        "connect via telegram",
+        "telegram_bot_chat_id",
+        "quick auto-link",
+        "chat not found",
+    ]
+    return sum(marker in haystack for marker in markers) >= 2
+
+
+def _extract_telegram_setup_status(page_html: str) -> Dict[str, str]:
+    text_value = _strip_html_text(page_html or "")
+    compact = re.sub(r"\s+", " ", text_value)
+    chat_id_match = re.search(r"Chat ID\s*:?\s*([0-9-]{5,})", compact, flags=re.IGNORECASE)
+    status_match = re.search(r"Status\s*:?\s*([^:]{2,80}?)(?:How to fix|Quick Auto-Link|Connect via Telegram|Submit|Back to Profile|$)", compact, flags=re.IGNORECASE)
+    return {
+        "chat_id": str(chat_id_match.group(1) if chat_id_match else "").strip(),
+        "status": str(status_match.group(1) if status_match else "").strip(" -\t\r\n"),
+    }
+
+
+def _site_setup_error_message(page_html: str) -> str:
+    info = _extract_telegram_setup_status(page_html)
+    parts = ["الموقع يوجّه الحساب إلى صفحة ربط تيليجرام بدل صفحة الرسائل، لذلك البوت لا يقدر يقرأ الأكواد من الموقع حالياً."]
+    if info.get("status"):
+        parts.append(f"حالة الربط الحالية: {info['status']}.")
+    if info.get("chat_id"):
+        parts.append(f"Chat ID الحالي بالموقع: {info['chat_id']}.")
+    parts.append("اربط الحساب ببوت تيليجرام الخاص بالموقع أو اضبط SITE_TELEGRAM_CHAT_ID على Chat ID صحيح، وبعدها سيقدر البوت يقرأ الأكواد فوراً.")
+    return " ".join(parts)
+
+
+def _raise_if_site_requires_telegram_setup(resp: Optional[requests.Response], context: str = "") -> None:
+    if not resp:
+        return
+    page_html = getattr(resp, "text", "") or ""
+    final_url = getattr(resp, "url", "") or ""
+    if _looks_like_telegram_setup_page(page_html, final_url):
+        message = _site_setup_error_message(page_html)
+        if context:
+            message = f"{message} [{context}]"
+        raise SiteTelegramSetupRequired(message)
+
+
+def _try_fix_site_telegram_setup(session: requests.Session, setup_resp: Optional[requests.Response] = None) -> bool:
+    if not AUTO_FIX_SITE_TELEGRAM_SETUP:
+        return False
+    target_chat_id = str(SITE_TELEGRAM_CHAT_ID or ADMIN_ID or "").strip()
+    if not target_chat_id:
+        return False
+    try:
+        resp = setup_resp or session.get(SITE_TELEGRAM_SETUP_URL, timeout=15, allow_redirects=True)
+        page_html = getattr(resp, "text", "") or ""
+        final_url = getattr(resp, "url", "") or ""
+        if not _looks_like_telegram_setup_page(page_html, final_url):
+            return False
+        csrf = _extract_csrf_token(page_html)
+        if not csrf:
+            return False
+        save_resp = session.post(
+            f"{SITE_URL}/telegram-setup/save",
+            data={"_token": csrf, "telegram_bot_chat_id": target_chat_id},
+            headers={"Referer": SITE_TELEGRAM_SETUP_URL, "Origin": SITE_URL},
+            timeout=20,
+            allow_redirects=True,
+        )
+        for probe_url in (MY_MESSAGES_URL, TEST_MESSAGES_URL, HOME_URL, RANGES_URL):
+            try:
+                probe = session.get(probe_url, timeout=12, allow_redirects=True)
+                if _looks_like_telegram_setup_page(getattr(probe, "text", "") or "", getattr(probe, "url", "") or ""):
+                    continue
+                if _is_authenticated_response(probe):
+                    logger.info("✅ تم تجاوز صفحة Telegram Setup تلقائياً")
+                    return True
+            except Exception:
+                continue
+        logger.warning(f"تعذر تجاوز صفحة Telegram Setup تلقائياً. save_status={getattr(save_resp, 'status_code', 'n/a')}")
+    except Exception as setup_fix_err:
+        logger.warning(f"telegram setup auto-fix warning: {setup_fix_err}")
+    return False
+
+
 def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
     if not resp:
         return False
     final_url = (getattr(resp, "url", "") or "").lower()
     page = (getattr(resp, "text", "") or "").lower()
+    if _looks_like_telegram_setup_page(page, final_url):
+        return False
     auth_markers = [
         "logout",
         "my numbers",
@@ -766,6 +863,9 @@ def _login_site_with_credentials(session: requests.Session) -> bool:
 
         if post_resp.status_code == 200 and _is_authenticated_response(post_resp):
             logger.info("✅ تم تسجيل الدخول للموقع بنجاح عبر البريد/كلمة المرور")
+            return True
+        if post_resp.status_code == 200 and _looks_like_telegram_setup_page(getattr(post_resp, "text", "") or "", getattr(post_resp, "url", "") or ""):
+            logger.info("✅ تم تسجيل الدخول للموقع لكن الحساب متوقف على صفحة Telegram Setup")
             return True
 
         logger.warning("⚠️ تعذر تسجيل الدخول تلقائياً، سيُستخدم الـ cookie الموجود إن كان صالحاً")
@@ -869,6 +969,9 @@ def _build_site_session() -> requests.Session:
 
     try:
         probe = session.get(RANGES_URL, timeout=12, allow_redirects=True)
+        if _looks_like_telegram_setup_page(getattr(probe, "text", "") or "", getattr(probe, "url", "") or ""):
+            _try_fix_site_telegram_setup(session, probe)
+            probe = session.get(RANGES_URL, timeout=12, allow_redirects=True)
         if _is_authenticated_response(probe):
             logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
             _store_site_session_bootstrap(session)
@@ -878,6 +981,12 @@ def _build_site_session() -> requests.Session:
 
     if SITE_EMAIL and SITE_PASS:
         if _login_site_with_credentials(session):
+            try:
+                probe = session.get(HOME_URL, timeout=12, allow_redirects=True)
+                if _looks_like_telegram_setup_page(getattr(probe, "text", "") or "", getattr(probe, "url", "") or ""):
+                    _try_fix_site_telegram_setup(session, probe)
+            except Exception as login_probe_err:
+                logger.debug(f"login probe after auth skipped: {login_probe_err}")
             _store_site_session_bootstrap(session)
             return session
 
@@ -1477,6 +1586,79 @@ def _extract_live_code_rows_from_html(page_html: str, source: str = 'live_html')
     return rows
 
 
+def _messages_datatable_params(length: int = 100, start: int = 0, draw: int = 1) -> Dict[str, str]:
+    return {
+        "draw": str(max(1, int(draw or 1))),
+        "start": str(max(0, int(start or 0))),
+        "length": str(max(1, int(length or 100))),
+        "search[value]": "",
+        "search[regex]": "false",
+    }
+
+
+def _collect_codes_from_messages_pages(session: requests.Session) -> List[Dict]:
+    collected: List[Dict] = []
+    page_tokens: Dict[str, str] = {}
+    page_specs = [
+        ('my_messages', MY_MESSAGES_URL, MY_MESSAGES_DATA_URL),
+        ('test_messages', TEST_MESSAGES_URL, TEST_MESSAGES_DATA_URL),
+    ]
+
+    for label, page_url, data_url in page_specs:
+        try:
+            page_resp = session.get(page_url, timeout=20, allow_redirects=True)
+            _raise_if_site_requires_telegram_setup(page_resp, label)
+            if page_resp.status_code != 200:
+                continue
+            page_html = getattr(page_resp, 'text', '') or ''
+            page_tokens[label] = _extract_csrf_token(page_html) or ''
+            collected.extend(_extract_live_code_rows_from_html(page_html, source=f'{label}_page'))
+        except SiteTelegramSetupRequired:
+            raise
+        except Exception as page_err:
+            logger.debug(f'messages page probe failed for {label}: {page_err}')
+
+        data_jobs = [
+            (f'{label}_data_get', data_url, 'get', None),
+            (f'{label}_data_post', data_url, 'post', page_tokens.get(label, '')),
+        ]
+        for source_name, endpoint, method, token in data_jobs:
+            if not endpoint:
+                continue
+            try:
+                params = _messages_datatable_params(length=100, start=0, draw=1)
+                headers = {
+                    'Referer': page_url,
+                    'Accept': 'application/json, text/javascript, */*; q=0.01',
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+                if method == 'post':
+                    payload = dict(params)
+                    if token:
+                        payload['_token'] = token
+                    resp = session.post(endpoint, data=payload, headers=headers, timeout=20, allow_redirects=True)
+                else:
+                    resp = session.get(endpoint, params=params, headers=headers, timeout=20, allow_redirects=True)
+                _raise_if_site_requires_telegram_setup(resp, source_name)
+                if resp.status_code != 200:
+                    continue
+                content_type = (resp.headers.get('content-type', '') or '').lower()
+                if 'json' in content_type:
+                    try:
+                        payload = resp.json()
+                    except Exception:
+                        payload = None
+                    if payload is not None:
+                        collected.extend(_extract_live_code_rows_from_payload(payload, source=source_name))
+                else:
+                    collected.extend(_extract_live_code_rows_from_html(getattr(resp, 'text', '') or '', source=source_name))
+            except SiteTelegramSetupRequired:
+                raise
+            except Exception as data_err:
+                logger.debug(f'messages data probe failed for {source_name}: {data_err}')
+    return collected
+
+
 def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> Optional[Dict]:
     target = _normalize_number(number)
     if not target:
@@ -1491,6 +1673,13 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
         logger.warning(f'تعذر تجهيز جلسة فحص الكود للرقم {target}: {session_err}')
         return None
 
+    try:
+        collected.extend(_collect_codes_from_messages_pages(session))
+    except SiteTelegramSetupRequired:
+        raise
+    except Exception as messages_err:
+        logger.debug(f'messages pages scan skipped for {target}: {messages_err}')
+
     page_tokens: Dict[str, str] = {}
     page_jobs = [
         ('my_sms', f'{SITE_URL}/portal/live/my_sms'),
@@ -1499,11 +1688,16 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
     for label, page_url in page_jobs:
         try:
             page_resp = session.get(page_url, timeout=20, allow_redirects=True)
+            if page_resp.status_code == 404:
+                continue
+            _raise_if_site_requires_telegram_setup(page_resp, label)
             if not _is_authenticated_response(page_resp):
                 continue
             page_html = getattr(page_resp, 'text', '') or ''
             page_tokens[label] = _extract_csrf_token(page_html) or ''
             collected.extend(_extract_live_code_rows_from_html(page_html, source=f'{label}_page'))
+        except SiteTelegramSetupRequired:
+            raise
         except Exception as page_err:
             logger.debug(f'live code page probe failed for {label}: {page_err}')
 
@@ -1526,6 +1720,9 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
                 resp = session.post(endpoint, data=data, headers=headers, timeout=20, allow_redirects=True)
             else:
                 resp = session.get(endpoint, headers=headers, timeout=20, allow_redirects=True)
+            if resp.status_code == 404:
+                continue
+            _raise_if_site_requires_telegram_setup(resp, label)
             if resp.status_code != 200:
                 continue
             content_type = (resp.headers.get('content-type', '') or '').lower()
@@ -1538,6 +1735,8 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
                     collected.extend(_extract_live_code_rows_from_payload(payload, source=label))
             else:
                 collected.extend(_extract_live_code_rows_from_html(getattr(resp, 'text', '') or '', source=label))
+        except SiteTelegramSetupRequired:
+            raise
         except Exception as ajax_err:
             logger.debug(f'live code ajax probe failed for {label}: {ajax_err}')
 
@@ -1558,6 +1757,13 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
         else:
             same_number.append(normalized_item)
 
+    def _rank(row: Dict[str, Any]) -> Tuple[int, str, int]:
+        time_value = str(row.get('time') or row.get('date') or '')
+        msg_value = str(row.get('message') or row.get('text') or '')
+        return (1 if time_value else 0, time_value, len(msg_value))
+
+    exact_platform.sort(key=_rank, reverse=True)
+    same_number.sort(key=_rank, reverse=True)
     picked = exact_platform[0] if exact_platform else (same_number[0] if same_number else None)
     if not picked:
         return None
@@ -1569,7 +1775,10 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
     if not target:
         return None
 
-    live_candidate = _fetch_latest_live_code_for_number(target, platform_hint)
+    try:
+        live_candidate = _fetch_latest_live_code_for_number(target, platform_hint)
+    except SiteTelegramSetupRequired:
+        raise
     if live_candidate:
         _cache_code_for_number(target, platform_hint, live_candidate)
         return live_candidate
@@ -1655,6 +1864,8 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
                         })
                         _cache_code_for_number(target, platform_hint, latest)
                         return latest
+    except SiteTelegramSetupRequired:
+        raise
     except Exception as sms_err:
         logger.warning(f"فشل فحص الكود للرقم {number}: {sms_err}")
 
@@ -3177,7 +3388,10 @@ def number_check_callback(call):
                         bot.delete_message(chat_id, wait_message.message_id)
                     except Exception:
                         pass
-                bot.send_message(chat_id, f"⚠️ حدث خطأ أثناء جلب الكود: {check_err}")
+                if isinstance(check_err, SiteTelegramSetupRequired):
+                    bot.send_message(chat_id, f"⚠️ <b>تعذر قراءة الأكواد من الموقع</b>\n\n{html.escape(str(check_err))}", parse_mode="HTML")
+                else:
+                    bot.send_message(chat_id, f"⚠️ حدث خطأ أثناء جلب الكود: {check_err}")
             except Exception:
                 pass
 
