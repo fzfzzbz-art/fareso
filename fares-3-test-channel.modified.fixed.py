@@ -8,9 +8,6 @@
 ║  📢 القناة: @fz_z_Z                                          ║
 ╚══════════════════════════════════════════════════════════════╝
 """
-import requests
-
-from bs4 import BeautifulSoup
 
 import os
 
@@ -130,10 +127,6 @@ except ImportError:
 
 try:
     from telebot import TeleBot, types
-    try:
-        from telebot.apihelper import ApiTelegramException
-    except Exception:
-        ApiTelegramException = Exception
 except ImportError as exc:
     raise RuntimeError(
         "Missing dependency: pyTelegramBotAPI. Install it with: pip install pyTelegramBotAPI"
@@ -150,25 +143,15 @@ _DEFAULTS = {
     "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
 
-    # روابط الموقع الحالية (Basha IPRN VAS)
+    # روابط المواقع (تم التحديث لموقع باشا)
     "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
-    "HOME_URL": os.environ.get("HOME_URL", "https://basha.cc/home"),
     "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
-    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
-    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
-    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers"),
-    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
-    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
-    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
-    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
-    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
-    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
-
-    # بيانات الحساب (تُقرأ من البيئة)
+    
+    # بيانات الحساب (تُقرأ من Render)
     "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
     "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
     "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
-
+    
     # الكوكيز والتمويه
     "SITE_COOKIE": os.environ.get("SITE_COOKIE", ""),
     "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -203,17 +186,6 @@ BOT_TOKEN        = _get("BOT_TOKEN")
 ADMIN_ID         = int(_get("ADMIN_ID", "0") or "0")
 
 SITE_URL         = _get("SITE_URL", "https://basha.cc")
-HOME_URL         = _get("HOME_URL", f"{SITE_URL}/home")
-RANGES_URL       = _get("RANGES_URL", f"{SITE_URL}/my/ranges")
-MY_RANGES_DATA_URL = _get("MY_RANGES_DATA_URL", f"{SITE_URL}/my/ranges/data")
-MY_NUMBERS_URL   = _get("MY_NUMBERS_URL", f"{SITE_URL}/my/numbers")
-MY_NUMBERS_DATA_URL = _get("MY_NUMBERS_DATA_URL", MY_NUMBERS_URL)
-MY_MESSAGES_URL  = _get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages")
-MY_MESSAGES_DATA_URL = _get("MY_MESSAGES_DATA_URL", f"{SITE_URL}/my/messages/data")
-TEST_MESSAGES_URL = _get("TEST_MESSAGES_URL", f"{SITE_URL}/test/messages")
-TEST_MESSAGES_DATA_URL = _get("TEST_MESSAGES_DATA_URL", f"{SITE_URL}/test/messages/data")
-TEST_NUMBERS_URL = _get("TEST_NUMBERS_URL", f"{SITE_URL}/test/numbers")
-TEST_NUMBERS_DATA_URL = _get("TEST_NUMBERS_DATA_URL", f"{SITE_URL}/test/numbers/data")
 
 API_TOKEN        = _get("API_TOKEN", "")
 
@@ -493,11 +465,6 @@ def _install_runtime_guardrails_once() -> None:
             _log_uncaught(args.exc_type, args.exc_value, args.exc_traceback)
         threading.excepthook = _thread_hook
 
-HOSTING_SAFE_MODE = _env_flag("HOSTING_SAFE_MODE", True)
-HOSTING_SAFE_MAX_THREADS = max(2, int(str(os.getenv("HOSTING_SAFE_MAX_THREADS", "2") or "2").strip() or "2"))
-if HOSTING_SAFE_MODE:
-    BOT_WORKER_THREADS = max(2, min(BOT_WORKER_THREADS, HOSTING_SAFE_MAX_THREADS))
-
 _HOSTING_HTTP_HOST = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
 
 try:
@@ -505,11 +472,7 @@ try:
 except ValueError:
     _HOSTING_HTTP_PORT = 0
 
-_INTERNAL_HTTP_SERVER_REQUESTED = _env_flag("HOSTING_HTTP_ENABLED", False) or _env_flag("RUN_INTERNAL_HTTP_SERVER", False)
-_HOSTING_HTTP_ENABLED = bool(_HOSTING_HTTP_PORT > 0 and _INTERNAL_HTTP_SERVER_REQUESTED)
-
-HOSTING_HEARTBEAT_ENABLED = _env_flag("HOSTING_HEARTBEAT_ENABLED", not HOSTING_SAFE_MODE)
-OPTIONAL_BACKGROUND_TASKS_ENABLED = _env_flag("OPTIONAL_BACKGROUND_TASKS_ENABLED", not HOSTING_SAFE_MODE)
+_HOSTING_HTTP_ENABLED = str(os.getenv("HOSTING_HTTP_ENABLED", "1" if _HOSTING_HTTP_PORT else "0")).strip().lower() in {"1", "true", "yes", "on"}
 
 _hosting_http_lock = threading.Lock()
 
@@ -725,18 +688,13 @@ def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
     page = (getattr(resp, "text", "") or "").lower()
     auth_markers = [
         "logout",
+        "account code",
         "my numbers",
-        "my ranges",
-        "received sms",
-        "my statistics",
-        "my invoices",
-        "test sms",
-        "test numbers",
-        "https://basha.cc/my/ranges",
-        "https://basha.cc/my/numbers",
-        "https://basha.cc/my/messages",
+        "client active sms",
+        "my sms statistics",
+        "portal/profile",
     ]
-    if any(marker in final_url for marker in ("/home", "/my/", "/profile", "/test/")):
+    if "/portal" in final_url or "/portal/profile" in final_url:
         return True
     return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 2
 
@@ -884,7 +842,7 @@ def _build_site_session() -> requests.Session:
         _apply_site_cookie(session, SITE_COOKIE or "")
 
     try:
-        probe = session.get(RANGES_URL, timeout=12, allow_redirects=True)
+        probe = session.get(f"{SITE_URL}/portal", timeout=12, allow_redirects=True)
         if _is_authenticated_response(probe):
             logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
             _store_site_session_bootstrap(session)
@@ -1776,13 +1734,13 @@ def _smart_scrape_homepage() -> dict:
 
         session = _build_site_session()
 
-        # الصفحات المرشحة للسحب بعد تحديث مسارات الموقع
+        # الصفحات المرشحة للسحب
         candidate_pages = [
-            MY_NUMBERS_URL,
-            RANGES_URL,
-            MY_MESSAGES_URL,
-            HOME_URL,
-            f"{SITE_URL}/profile",
+            f"{SITE_URL}/portal/numbers",
+            f"{SITE_URL}/portal/live/my_sms",
+            f"{SITE_URL}/portal/sms/received",
+            f"{SITE_URL}/portal/profile",
+            f"{SITE_URL}/portal",
             f"{SITE_URL}/",
         ]
 
@@ -1879,18 +1837,54 @@ def _portal_numbers_datatable_params(length: int = 200, start: int = 0, draw: in
         "draw": str(max(1, int(draw or 1))),
         "start": str(max(0, int(start or 0))),
         "length": str(max(1, int(length or 200))),
-        "columns[0][data]": "range_name",
-        "columns[0][name]": "range_name",
+        "columns[0][data]": "number_id",
+        "columns[0][name]": "id",
         "columns[0][searchable]": "true",
-        "columns[0][orderable]": "true",
+        "columns[0][orderable]": "false",
         "columns[0][search][value]": "",
         "columns[0][search][regex]": "false",
-        "columns[1][data]": "full_number",
-        "columns[1][name]": "full_number",
+        "columns[1][data]": "Number",
+        "columns[1][name]": "Number",
         "columns[1][searchable]": "true",
         "columns[1][orderable]": "true",
         "columns[1][search][value]": "",
         "columns[1][search][regex]": "false",
+        "columns[2][data]": "range",
+        "columns[2][name]": "range",
+        "columns[2][searchable]": "true",
+        "columns[2][orderable]": "true",
+        "columns[2][search][value]": "",
+        "columns[2][search][regex]": "false",
+        "columns[3][data]": "A2P",
+        "columns[3][name]": "A2P",
+        "columns[3][searchable]": "true",
+        "columns[3][orderable]": "true",
+        "columns[3][search][value]": "",
+        "columns[3][search][regex]": "false",
+        "columns[4][data]": "LimitA2P",
+        "columns[4][name]": "LimitA2P",
+        "columns[4][searchable]": "true",
+        "columns[4][orderable]": "true",
+        "columns[4][search][value]": "",
+        "columns[4][search][regex]": "false",
+        "columns[5][data]": "limit_cli_a2p",
+        "columns[5][name]": "limit_cli_a2p",
+        "columns[5][searchable]": "true",
+        "columns[5][orderable]": "true",
+        "columns[5][search][value]": "",
+        "columns[5][search][regex]": "false",
+        "columns[6][data]": "limit_cli_did_a2p",
+        "columns[6][name]": "limit_cli_did_a2p",
+        "columns[6][searchable]": "true",
+        "columns[6][orderable]": "true",
+        "columns[6][search][value]": "",
+        "columns[6][search][regex]": "false",
+        "columns[7][data]": "action",
+        "columns[7][name]": "action",
+        "columns[7][searchable]": "false",
+        "columns[7][orderable]": "false",
+        "columns[7][search][value]": "",
+        "columns[7][search][regex]": "false",
         "order[0][column]": "1",
         "order[0][dir]": "desc",
         "search[value]": "",
@@ -1898,103 +1892,18 @@ def _portal_numbers_datatable_params(length: int = 200, start: int = 0, draw: in
     }
 
 
-def _ranges_datatable_params(length: int = 100, start: int = 0, draw: int = 1) -> dict:
-    return {
-        "draw": str(max(1, int(draw or 1))),
-        "start": str(max(0, int(start or 0))),
-        "length": str(max(1, int(length or 100))),
-        "columns[0][data]": "0",
-        "columns[0][name]": "action",
-        "columns[0][searchable]": "false",
-        "columns[0][orderable]": "false",
-        "columns[0][search][value]": "",
-        "columns[0][search][regex]": "false",
-        "columns[1][data]": "1",
-        "columns[1][name]": "range_name",
-        "columns[1][searchable]": "true",
-        "columns[1][orderable]": "true",
-        "columns[1][search][value]": "",
-        "columns[1][search][regex]": "false",
-        "columns[2][data]": "2",
-        "columns[2][name]": "total_numbers",
-        "columns[2][searchable]": "true",
-        "columns[2][orderable]": "true",
-        "columns[2][search][value]": "",
-        "columns[2][search][regex]": "false",
-        "columns[3][data]": "3",
-        "columns[3][name]": "payment_term",
-        "columns[3][searchable]": "true",
-        "columns[3][orderable]": "true",
-        "columns[3][search][value]": "",
-        "columns[3][search][regex]": "false",
-        "order[0][column]": "1",
-        "order[0][dir]": "asc",
-        "search[value]": "",
-        "search[regex]": "false",
-    }
-
-
-def _fetch_my_ranges_summary(session: requests.Session) -> Dict[str, Dict[str, str]]:
-    summary: Dict[str, Dict[str, str]] = {}
-    try:
-        resp = session.get(
-            MY_RANGES_DATA_URL,
-            params=_ranges_datatable_params(),
-            headers={
-                "Accept": "application/json, text/javascript, */*; q=0.01",
-                "X-Requested-With": "XMLHttpRequest",
-                "Referer": RANGES_URL,
-            },
-            timeout=15,
-            allow_redirects=True,
-        )
-        if resp.status_code != 200 or "json" not in (resp.headers.get("content-type", "").lower()):
-            return summary
-        payload = resp.json()
-        for row in payload.get("data", []) or []:
-            if isinstance(row, (list, tuple)):
-                action_html = str(row[0] if len(row) > 0 else "")
-                range_name = _strip_html_text(row[1] if len(row) > 1 else "")
-                total_numbers = _strip_html_text(row[2] if len(row) > 2 else "")
-                payment_term = _strip_html_text(row[3] if len(row) > 3 else "")
-            elif isinstance(row, dict):
-                action_html = str(row.get("action") or row.get(0) or row.get("0") or "")
-                range_name = _strip_html_text(row.get("range_name") or row.get(1) or row.get("1") or "")
-                total_numbers = _strip_html_text(row.get("total_numbers") or row.get(2) or row.get("2") or "")
-                payment_term = _strip_html_text(row.get("payment_term") or row.get(3) or row.get("3") or "")
-            else:
-                continue
-            range_key = re.sub(r"\s+", " ", range_name).strip().lower()
-            if not range_key:
-                continue
-            links = re.findall(r'href=["\']([^"\']+)["\']', action_html, flags=re.IGNORECASE)
-            download_url = links[0] if len(links) > 0 else ""
-            revoke_url = links[1] if len(links) > 1 else ""
-            summary[range_key] = {
-                "range_name": range_name,
-                "total_numbers": total_numbers,
-                "payment_term": payment_term,
-                "download_url": download_url,
-                "revoke_url": revoke_url,
-            }
-    except Exception as ranges_err:
-        logger.debug(f"my ranges summary fetch failed: {ranges_err}")
-    return summary
-
-
 def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
     collected: List[Dict] = []
     seen_numbers = set()
-    endpoint = MY_NUMBERS_DATA_URL
+    endpoint = f"{SITE_URL}/portal/numbers"
     page_size = max(100, min(1000, int(_get("SITE_ADD_PORTAL_PAGE_SIZE", "300") or "300")))
     max_pages = max(1, min(25, int(_get("SITE_ADD_PORTAL_MAX_PAGES", "8") or "8")))
     soft_timeout = max(6.0, float(_get("SITE_ADD_PORTAL_SOFT_TIMEOUT_SECONDS", "12") or "12"))
     started_at = time.time()
-    ranges_summary = _fetch_my_ranges_summary(session)
     try:
         for page_idx in range(max_pages):
             if (time.time() - started_at) >= soft_timeout:
-                logger.warning(f"My Numbers datatable fetch stopped after {soft_timeout}s to keep bot responsive")
+                logger.warning(f"Portal datatable fetch stopped after {soft_timeout}s to keep bot responsive")
                 break
             start = page_idx * page_size
             resp = session.get(
@@ -2003,12 +1912,10 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
                 headers={
                     "Accept": "application/json, text/javascript, */*; q=0.01",
                     "X-Requested-With": "XMLHttpRequest",
-                    "Referer": MY_NUMBERS_URL,
                 },
                 timeout=min(10, max(6, int(soft_timeout))),
-                allow_redirects=True,
             )
-            logger.info(f"My Numbers datatable {endpoint} page={page_idx + 1} start={start} → {resp.status_code}")
+            logger.info(f"Portal datatable {endpoint} page={page_idx + 1} start={start} → {resp.status_code}")
             if resp.status_code != 200 or "json" not in (resp.headers.get("content-type", "").lower()):
                 break
 
@@ -2020,37 +1927,28 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
             for item in rows:
                 if not isinstance(item, dict):
                     continue
-                number = _normalize_number(str(item.get("full_number") or item.get("Number") or item.get("number") or item.get("phone") or "").strip())
+                number = _normalize_number(str(item.get("Number") or item.get("number") or item.get("phone") or "").strip())
                 if not number or number in seen_numbers:
                     continue
                 seen_numbers.add(number)
-                range_name = _strip_html_text(str(item.get("range_name") or item.get("range") or item.get("service") or "").strip())
-                range_meta = ranges_summary.get(re.sub(r"\s+", " ", range_name).strip().lower(), {}) if range_name else {}
-                payment_term = _strip_html_text(item.get("payment_term") or range_meta.get("payment_term") or "")
                 platform = _guess_platform_from_payload(
-                    range_name,
+                    item.get("range"),
                     item.get("platform"),
                     item.get("service"),
+                    item.get("A2P"),
                     item,
                 ) or GENERAL_PLATFORM_NAME
                 collected.append({
                     "number": number,
                     "platform": platform,
-                    "site_section": range_name,
-                    "source": "my_numbers_json",
+                    "site_section": str(item.get("range") or item.get("platform") or item.get("service") or "").strip(),
+                    "source": "portal_json",
                     "added_at": time.ctime(),
                     "country_name": str(item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
                     "country_name_ar": str(item.get("country_name_ar") or item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
                     "country": str(item.get("country") or item.get("country_name") or "").strip(),
                     "country_flag": str(item.get("country_flag") or "").strip(),
                     "country_code": str(item.get("country_code") or item.get("countryCode") or "").strip(),
-                    "raw_platform": range_name,
-                    "range_name": range_meta.get("range_name") or range_name,
-                    "payment_term": payment_term,
-                    "range_total_numbers": str(range_meta.get("total_numbers") or item.get("range_total_numbers") or "").strip(),
-                    "range_download_url": str(range_meta.get("download_url") or "").strip(),
-                    "range_revoke_url": str(range_meta.get("revoke_url") or "").strip(),
-                    "range_id": str(item.get("range_id") or "").strip(),
                 })
 
             total_rows = int(payload.get("recordsFiltered") or payload.get("recordsTotal") or 0)
@@ -2059,7 +1957,7 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
             if len(rows) < page_size:
                 break
     except Exception as portal_err:
-        logger.warning(f"My Numbers datatable fetch failed: {portal_err}")
+        logger.warning(f"Portal datatable fetch failed: {portal_err}")
     return _dedupe_numbers(collected)
 
 def _find_newly_added_numbers(old_items: List[Dict], new_items: List[Dict]) -> List[Dict]:
@@ -2141,33 +2039,6 @@ if not ADMIN_ID:
     logger.warning("ADMIN_ID is not set. Admin-only commands will not work correctly until you set ADMIN_ID.")
 
 bot        = TeleBot(BOT_TOKEN, threaded=True, num_threads=BOT_WORKER_THREADS)
-
-_original_answer_callback_query = bot.answer_callback_query
-
-def _is_stale_callback_query_error(exc: Exception) -> bool:
-    err_text = str(exc or "").strip().lower()
-    stale_markers = (
-        "query is too old",
-        "response timeout expired",
-        "query id is invalid",
-        "invalid query id",
-        "query_id_invalid",
-    )
-    return any(marker in err_text for marker in stale_markers)
-
-def _safe_answer_callback_query(*args, **kwargs):
-    try:
-        return _original_answer_callback_query(*args, **kwargs)
-    except Exception as callback_err:
-        if _is_stale_callback_query_error(callback_err):
-            try:
-                logger.info(f"ℹ️ تم تجاهل callback منتهي/قديم بدون تعطيل البوت: {callback_err}")
-            except Exception:
-                pass
-            return None
-        raise
-
-bot.answer_callback_query = _safe_answer_callback_query
 
 bot_active = True   # مفتاح تشغيل/إيقاف الاستجابة
 
@@ -3537,8 +3408,8 @@ def _platform_exists(platform):
 
 pending_activation = {}
 
-AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", True)
-AUTO_CODE_WATCH_INTERVAL_SECONDS = max(2.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "3.0") or "3.0").strip() or "3.0"))
+AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", False)
+AUTO_CODE_WATCH_INTERVAL_SECONDS = max(10.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "15.0") or "15.0").strip() or "15.0"))
 AUTO_CODE_WATCH_TTL_SECONDS = max(600, int(str(_get("AUTO_CODE_WATCH_TTL_SECONDS", "1800") or "1800").strip() or "1800"))
 _auto_code_watch_started = False
 _auto_code_watch_lock = threading.Lock()
@@ -3624,30 +3495,13 @@ def _auto_code_watch_loop():
                 continue
 
             fetched_results: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
-            watcher_jobs = list(grouped_watchers.keys())
-            max_workers = max(1, min(len(watcher_jobs), BOT_WORKER_THREADS, 6))
-            if max_workers <= 1:
-                for cache_key in watcher_jobs:
-                    number, platform = cache_key
-                    try:
-                        fetched_results[cache_key] = _fetch_latest_sms_for_number(number, platform)
-                    except Exception as fetch_err:
-                        fetched_results[cache_key] = None
-                        logger.debug(f"AUTO_CODE_WATCH fetch skipped for {number}: {fetch_err}")
-            else:
-                with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autocodewatch") as executor:
-                    future_map = {
-                        executor.submit(_fetch_latest_sms_for_number, number, platform): (number, platform)
-                        for number, platform in watcher_jobs
-                    }
-                    for future in as_completed(future_map):
-                        number, platform = future_map[future]
-                        cache_key = (number, platform)
-                        try:
-                            fetched_results[cache_key] = future.result()
-                        except Exception as fetch_err:
-                            fetched_results[cache_key] = None
-                            logger.debug(f"AUTO_CODE_WATCH fetch skipped for {number}: {fetch_err}")
+            for cache_key in grouped_watchers.keys():
+                number, platform = cache_key
+                try:
+                    fetched_results[cache_key] = _fetch_latest_sms_for_number(number, platform)
+                except Exception as fetch_err:
+                    fetched_results[cache_key] = None
+                    logger.debug(f"AUTO_CODE_WATCH fetch skipped for {number}: {fetch_err}")
 
             for cache_key, watch_group in grouped_watchers.items():
                 number, platform = cache_key
@@ -3843,7 +3697,7 @@ def live_codes_loop():
     sent = set()
     while True:
         try:
-            codes = fetch_live_test_codes(force_refresh=True)
+            codes = fetch_live_test_codes()
 
             for item in codes:
                 key = item["code"] + item["number"]
@@ -5286,8 +5140,8 @@ def _build_general_number_row(item: Dict) -> Dict:
     return row
 
 _live_test_codes_monitor_started = False
-LIVE_TEST_CODES_MONITOR_ENABLED = _env_flag("LIVE_TEST_CODES_MONITOR_ENABLED", True)
-LIVE_TEST_CODES_POLL_INTERVAL_SECONDS = max(2, int(str(_get("LIVE_TEST_CODES_POLL_INTERVAL_SECONDS", "3") or "3").strip() or "3"))
+LIVE_TEST_CODES_MONITOR_ENABLED = _env_flag("LIVE_TEST_CODES_MONITOR_ENABLED", False)
+LIVE_TEST_CODES_POLL_INTERVAL_SECONDS = max(10, int(str(_get("LIVE_TEST_CODES_POLL_INTERVAL_SECONDS", "20") or "20").strip() or "20"))
 
 _live_test_codes_seen = set()
 
@@ -5477,8 +5331,8 @@ SITE_ADD_FAST_SOURCE_TIMEOUT_SECONDS = max(6.0, float(str(_get("SITE_ADD_FAST_SO
 SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS = max(12.0, float(str(_get("SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS", "18") or "18").strip() or "18"))
 _site_add_jobs_lock = threading.RLock()
 _site_add_jobs: set = set()
-SITE_ADD_SOURCE_PAGE = MY_NUMBERS_URL
-SITE_ADD_SOURCE_LABEL = "my_numbers"
+SITE_ADD_SOURCE_PAGE = f"{SITE_URL}/portal/live/my_sms"
+SITE_ADD_SOURCE_LABEL = "my_sms"
 
 
 def _merge_site_add_datasets(*datasets: Dict) -> Dict:
@@ -5701,7 +5555,7 @@ def _extract_phone_candidates_from_text(raw_text: str) -> List[str]:
 def _extract_live_my_sms_rows_from_payload(payload: Any, source: str = 'live_my_sms_json') -> List[Dict]:
     rows: List[Dict] = []
     seen = set()
-    candidate_keys = ('number', 'Number', 'phone', 'mobile', 'msisdn', 'full_number', 'fullNumber', 'destination_number', 'source_number', 'range_name', 'tel', 'did', 'cli', 'sender', 'line')
+    candidate_keys = ('number', 'Number', 'phone', 'mobile', 'msisdn', 'full_number', 'tel', 'did', 'cli', 'sender', 'line')
 
     def _numbers_from_row(raw_row: Dict[str, Any]) -> List[str]:
         found_numbers: List[str] = []
@@ -5897,6 +5751,7 @@ def _dedupe_site_country_rows(items: List[Dict]) -> List[Dict]:
 
 def _site_add_country_buckets(rows: List[Dict]) -> List[Dict]:
     buckets: Dict[str, Dict] = {}
+    per_country_limit = 100
     for item in rows or []:
         row = _enrich_number_item(item)
         number = _normalize_number(row.get('number', ''))
@@ -5945,23 +5800,28 @@ def _site_add_country_buckets(rows: List[Dict]) -> List[Dict]:
 
         all_rows = list(bucket.pop('rows', []))
         all_rows.sort(key=lambda row: str(row.get('number') or ''))
-        if not all_rows:
-            continue
-        final_buckets.append({
-            'base_key': bucket.get('base_key', 'unknown'),
-            'key': bucket.get('base_key', 'unknown'),
-            'name': bucket.get('name', 'غير محددة'),
-            'display_name': bucket.get('name', 'غير محددة'),
-            'flag': bucket.get('flag', '🌐'),
-            'code': bucket.get('code', ''),
-            'total': len(all_rows),
-            'raw_total': len(all_rows),
-            'rows': [dict(item) for item in all_rows],
-            'duplicate_index': 1,
-            'duplicate_total': 1,
-            'is_duplicate': False,
-            'source_hint': source_hint,
-        })
+        duplicate_total = max(1, (len(all_rows) + per_country_limit - 1) // per_country_limit)
+        for duplicate_index in range(duplicate_total):
+            start = duplicate_index * per_country_limit
+            end = start + per_country_limit
+            chunk_rows = [dict(item) for item in all_rows[start:end]]
+            if not chunk_rows:
+                continue
+            final_buckets.append({
+                'base_key': bucket.get('base_key', 'unknown'),
+                'key': f"{bucket.get('base_key', 'unknown')}::{duplicate_index + 1}",
+                'name': bucket.get('name', 'غير محددة'),
+                'display_name': bucket.get('name', 'غير محددة'),
+                'flag': bucket.get('flag', '🌐'),
+                'code': bucket.get('code', ''),
+                'total': len(chunk_rows),
+                'raw_total': len(chunk_rows),
+                'rows': chunk_rows,
+                'duplicate_index': duplicate_index + 1,
+                'duplicate_total': duplicate_total,
+                'is_duplicate': duplicate_total > 1,
+                'source_hint': source_hint,
+            })
 
     final_buckets.sort(key=lambda bucket: (bucket.get('name', ''), int(bucket.get('duplicate_index', 1) or 1), bucket.get('key', '')))
     return final_buckets
@@ -6033,8 +5893,9 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
 
     for attempt_index in range(attempts):
         quick_jobs = [
-            ('my_numbers', MY_NUMBERS_URL, lambda: _fetch_numbers_from_portal(_build_site_session())),
-            ('homepage_scrape', HOME_URL, _fetch_numbers_from_homepage_scrape),
+            ('my_sms', SITE_ADD_SOURCE_PAGE, lambda: _fetch_numbers_from_live_my_sms(_build_site_session())),
+            ('portal_numbers', f'{SITE_URL}/portal/numbers', lambda: _fetch_numbers_from_portal(_build_site_session())),
+            ('homepage_scrape', f'{SITE_URL}/portal', _fetch_numbers_from_homepage_scrape),
         ]
         all_rows, source_counts, successful_sources, page_urls = _run_source_jobs(quick_jobs, SITE_ADD_FAST_SOURCE_TIMEOUT_SECONDS)
 
@@ -7755,6 +7616,7 @@ def _build_numbers_runtime_index() -> Dict[str, Any]:
     platform_country_base_rows: Dict[str, Dict[str, List[Dict]]] = {}
     platform_country_meta: Dict[str, Dict[str, Dict[str, Any]]] = {}
     raw_items = list(numbers_db.get('numbers', [])) if isinstance(numbers_db, dict) else []
+    per_country_limit = 100
 
     for item in raw_items:
         row = _enrich_number_item(item)
@@ -7802,22 +7664,28 @@ def _build_numbers_runtime_index() -> Dict[str, Any]:
         for base_key, rows in country_map.items():
             sorted_rows = [dict(item) for item in rows]
             sorted_rows.sort(key=lambda row: str(row.get('number') or ''))
-            if not sorted_rows:
-                continue
             meta = meta_map.get(base_key, {})
-            grouped_items.append({
-                'key': base_key,
-                'base_key': base_key,
-                'name': meta.get('name', 'غير محددة'),
-                'flag': meta.get('flag', '🌐'),
-                'code': meta.get('code', ''),
-                'digits_code': meta.get('digits_code', ''),
-                'count': len(sorted_rows),
-                'duplicate_index': 1,
-                'duplicate_total': 1,
-                'is_duplicate': False,
-            })
-            platform_country_rows.setdefault(platform, {})[base_key] = sorted_rows
+            duplicate_total = max(1, (len(sorted_rows) + per_country_limit - 1) // per_country_limit)
+            for duplicate_index in range(duplicate_total):
+                start = duplicate_index * per_country_limit
+                end = start + per_country_limit
+                chunk_rows = [dict(item) for item in sorted_rows[start:end]]
+                if not chunk_rows:
+                    continue
+                chunk_key = f"{base_key}::{duplicate_index + 1}"
+                grouped_items.append({
+                    'key': chunk_key,
+                    'base_key': base_key,
+                    'name': meta.get('name', 'غير محددة'),
+                    'flag': meta.get('flag', '🌐'),
+                    'code': meta.get('code', ''),
+                    'digits_code': meta.get('digits_code', ''),
+                    'count': len(chunk_rows),
+                    'duplicate_index': duplicate_index + 1,
+                    'duplicate_total': duplicate_total,
+                    'is_duplicate': duplicate_total > 1,
+                })
+                platform_country_rows.setdefault(platform, {})[chunk_key] = chunk_rows
         country_groups[platform] = sorted(
             grouped_items,
             key=lambda item: (
@@ -8840,7 +8708,7 @@ def _legacy_fetch_numbers_smart(notify_users: bool = True) -> Tuple[bool, int]:
     log_event("NUMBERS_FETCH_EMPTY", {"before": len(before_items)})
     return False, 0
 
-LIVE_TEST_CODES_CACHE_TTL_SECONDS = max(0.5, float(str(_get("LIVE_TEST_CODES_CACHE_TTL_SECONDS", "1.0") or "1.0").strip() or "1.0"))
+LIVE_TEST_CODES_CACHE_TTL_SECONDS = max(2.0, float(str(_get("LIVE_TEST_CODES_CACHE_TTL_SECONDS", "5") or "5").strip() or "5"))
 _live_test_codes_cache = {"ts": 0.0, "items": []}
 
 def fetch_live_test_codes(force_refresh: bool = False):
@@ -9006,11 +8874,9 @@ def _start_auto_sync_loop_once() -> None:
         _auto_sync_started = True
     threading.Thread(target=auto_sync_loop, daemon=True, name="auto-sync-loop").start()
 
-AUTO_CHANNEL_POST_ENABLED = _env_flag("AUTO_CHANNEL_POST_ENABLED", True)
+AUTO_CHANNEL_POST_ENABLED = _env_flag("AUTO_CHANNEL_POST_ENABLED", False)
 AUTO_CHANNEL_POST_INTERVAL_MINUTES = max(3, int(_get("AUTO_CHANNEL_POST_INTERVAL_MINUTES", "3") or "3"))
 _auto_channel_post_started = False
-_auto_channel_post_lock = threading.Lock()
-_auto_channel_post_last_message_ids: List[int] = []
 
 # يمكن تعطيل المهام التلقائية بالكامل من البيئة عند الحاجة فقط.
 FORCE_DISABLE_AUTO_UPDATES = _env_flag("FORCE_DISABLE_AUTO_UPDATES", False)
@@ -9022,83 +8888,20 @@ if FORCE_DISABLE_AUTO_UPDATES:
     LIVE_TEST_CODES_MONITOR_ENABLED = False
 
 
-def _auto_channel_post_platforms() -> List[str]:
-    platforms = []
-    for platform in list(_platform_picker_platforms()) or list(_TEST_MODE_SERVICES):
-        normalized = _normalize_platform(platform)
-        if normalized and normalized not in platforms:
-            platforms.append(normalized)
-    return platforms or [GENERAL_PLATFORM_NAME]
-
-
-def _build_auto_channel_post_messages(max_length: int = 3900) -> List[str]:
-    platforms = _auto_channel_post_platforms()
-    header = (
-        "🔄 <b>تحديث تلقائي للأرقام العشوائية</b>\n"
-        f"⏱ يتجدد كل {AUTO_CHANNEL_POST_INTERVAL_MINUTES} دقائق\n"
-        f"🌐 عدد المنصات: {len(platforms)}\n"
-        f"🕒 {html.escape(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}\n\n"
-    )
-    messages: List[str] = []
-    current = header
-    for idx, platform in enumerate(platforms, 1):
-        country = _random_test_country()
-        item = _generate_test_mode_item_for_country(country, service=platform, seed_index=idx)
-        block = (
-            f"{idx}) <b>{html.escape(_display_platform_name(platform))}</b>\n"
-            f"📱 <code>{html.escape(str(item.get('number', '') or ''))}</code>\n"
-            f"🔐 <code>{html.escape(str(item.get('code', '') or ''))}</code>\n"
-            f"🏷️ المنصة: {html.escape(_display_platform_name(platform))}\n"
-            f"🌍 {html.escape(str(item.get('country_flag', '🌐') or '🌐'))} {html.escape(str(item.get('country_name', 'غير محددة') or 'غير محددة'))}\n\n"
-        )
-        if len(current) + len(block) > max_length and current.strip() != header.strip():
-            messages.append(current.rstrip())
-            current = header + block
-        else:
-            current += block
-    if current.strip():
-        messages.append(current.rstrip())
-    return messages or [header + _build_test_mode_message_text(_generate_test_mode_item())]
-
-
 def _build_auto_channel_post_text() -> str:
-    messages = _build_auto_channel_post_messages(max_length=3900)
+    messages = _build_test_mode_broadcast_messages(max_length=3500)
     return messages[0] if messages else _build_test_mode_message_text(_generate_test_mode_item())
 
 
-def _delete_previous_auto_channel_messages() -> None:
-    if not CHANNEL_ID:
-        return
-    with _auto_channel_post_lock:
-        previous_ids = [int(mid) for mid in _auto_channel_post_last_message_ids if str(mid).isdigit()]
-        _auto_channel_post_last_message_ids.clear()
-    for message_id in previous_ids:
-        try:
-            bot.delete_message(CHANNEL_ID, message_id)
-            time.sleep(0.15)
-        except Exception:
-            pass
-
-
 def _post_auto_channel_message_once():
-    if not CHANNEL_ID:
-        logger.info('⏸️ النشر التلقائي متوقف لأن CHANNEL_ID غير مضبوط.')
-        return
-    _delete_previous_auto_channel_messages()
-    sent_ids: List[int] = []
-    for text_value in _build_auto_channel_post_messages(max_length=3900):
-        sent_message = bot.send_message(
+    for text_value in _build_test_mode_broadcast_messages(max_length=3500):
+        bot.send_message(
             CHANNEL_ID,
             text_value,
             parse_mode='HTML',
             reply_markup=_build_channel_post_markup(),
         )
-        message_id = getattr(sent_message, 'message_id', None)
-        if isinstance(message_id, int):
-            sent_ids.append(message_id)
         time.sleep(0.35)
-    with _auto_channel_post_lock:
-        _auto_channel_post_last_message_ids[:] = sent_ids
 
 
 def _start_auto_channel_post_loop_once():
@@ -9129,21 +8932,14 @@ AUTO_SYNC_INTERVAL_MINUTES = max(1, int(_get("AUTO_SYNC_INTERVAL_MINUTES", "3") 
 
 def _start_background_services() -> None:
     background_tasks = [
+        ('HTTP server', _start_hosting_http_server_once),
+        ('hosting heartbeat', _start_hosting_heartbeat_once),
+        ('test mode publisher', _start_test_mode_publisher_once),
         ('general bootstrap', _bootstrap_general_bucket_once),
+        ('live monitor', _start_live_test_codes_monitor_once),
         ('auto code watch', _start_auto_code_watch_loop_once),
+        ('auto channel post', _start_auto_channel_post_loop_once),
     ]
-    if _HOSTING_HTTP_ENABLED:
-        background_tasks.insert(0, ('HTTP server', _start_hosting_http_server_once))
-    if HOSTING_HEARTBEAT_ENABLED:
-        background_tasks.append(('hosting heartbeat', _start_hosting_heartbeat_once))
-    if OPTIONAL_BACKGROUND_TASKS_ENABLED:
-        background_tasks.extend([
-            ('test mode publisher', _start_test_mode_publisher_once),
-            ('live monitor', _start_live_test_codes_monitor_once),
-            ('auto channel post', _start_auto_channel_post_loop_once),
-        ])
-    else:
-        logger.info('🛡️ Hosting safe mode enabled: optional background services are disabled to protect the website/server resources مع إبقاء مراقبة الأكواد الخاصة شغالة.')
     for label, starter in background_tasks:
         try:
             starter()
@@ -9268,3 +9064,66 @@ def _supervise_main_forever() -> None:
 
 if __name__ == '__main__':
     _supervise_main_forever()
+
+(generic_backoff)
+
+
+def main():
+    _install_runtime_guardrails_once()
+    _ensure_single_local_instance()
+    _start_background_services()
+
+    _register_runtime_handlers_once()
+    _register_visible_bot_commands()
+    _restore_wa_queue_from_disk()
+    restored_numbers_count = _bootstrap_numbers_storage()
+    _refresh_dynamic_platforms()
+    _get_numbers_runtime_index()
+
+    logger.info('=' * 60)
+    logger.info('  Bot Pro v4 — Free Hosting Stable Start')
+    logger.info('=' * 60)
+
+    _start_wa_retry_worker_once()
+    current_count = _maybe_run_initial_sync()
+    _notify_admin_startup(restored_numbers_count, current_count)
+
+    log_event('BOT_STARTED', {
+        'numbers': current_count,
+        'platforms': len(_platform_picker_platforms()),
+        'auto_sync': AUTO_SYNC_NUMBERS,
+        'sync_interval_minutes': AUTO_SYNC_INTERVAL_MINUTES,
+    })
+
+    try:
+        bot.remove_webhook()
+    except Exception as webhook_err:
+        logger.warning(f'Webhook cleanup warning: {webhook_err}')
+
+    if AUTO_SYNC_NUMBERS:
+        logger.info('🔄 المزامنة التلقائية للأرقام مفعّلة.')
+        _start_auto_sync_loop_once()
+    else:
+        logger.info('⏸️ المزامنة التلقائية للأرقام متوقفة.')
+
+    _run_polling_forever()
+
+def _supervise_main_forever() -> None:
+    restart_delay = 5
+    while True:
+        try:
+            main()
+            logger.warning(f'main() exited unexpectedly; restarting in {restart_delay}s')
+        except KeyboardInterrupt:
+            logger.info('🛑 تم إيقاف البوت يدوياً من الطرفية.')
+            break
+        except Exception as fatal_err:
+            logger.exception(f'Fatal top-level crash, restarting in {restart_delay}s: {fatal_err}')
+        time.sleep(restart_delay)
+
+
+if __name__ == '__main__':
+    _supervise_main_forever()
+
+
+
