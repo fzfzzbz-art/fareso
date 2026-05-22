@@ -3035,7 +3035,6 @@ def _build_platform_country_markup(platform: str, page: int = 0) -> types.Inline
 def _build_number_actions_markup() -> types.InlineKeyboardMarkup:
     mk = types.InlineKeyboardMarkup(row_width=1)
     mk.add(types.InlineKeyboardButton("🔄 تغيير الرقم", callback_data="num_change"))
-    mk.add(types.InlineKeyboardButton("🔍 فحص الكود الآن", callback_data="num_check"))
     mk.add(types.InlineKeyboardButton("↩️ رجوع للدول", callback_data="num_back_countries"))
     mk.add(types.InlineKeyboardButton("🌐 رجوع للمنصات", callback_data="num_back"))
     return mk
@@ -3139,8 +3138,8 @@ def _render_user_number_card(chat_id: int, user_id: int, message_id: Optional[in
         f"🌍 <b>الدولة:</b> {country_info.get('flag', '🌐')} {country_name}{code_text}\n"
         f"🔢 <b>الرقم الحالي:</b>\n<code>{number_html}</code>\n\n"
         f"📦 <b>ترتيب الرقم داخل الدولة:</b> {index + 1} من {len(avail)}\n"
-        "⚡ <b>المتابعة التلقائية مفعلة:</b> أول ما يوصل الكود البوت هيبعته لك تلقائياً بدون ما تضغط فحص الكود.\n"
-        "ولو حبيت، تقدر تفحصه يدوياً من الزر اللي تحت."
+        "⚡ <b>المتابعة التلقائية مفعلة:</b> أول ما يوصل الكود في صفحة <code>my/messages</code> البوت هيبعته لك تلقائياً مباشرة.\n"
+        "⏳ فقط انتظر وصول الرسالة الجديدة وسيتم إرسال الكود لك بدون أي خطوة إضافية."
     )
     return _send_or_edit(
         chat_id,
@@ -5282,7 +5281,7 @@ def _report_site_platforms(chat_id: int):
             bot.send_message(chat_id, "⚠️ ماقدرتش أستخرج منصات من الموقع حالياً. راجع الكوكيز أو الحساب.")
             return
         lines = [
-            "🧭 فحص المنصات المتاحة في الموقع",
+            "📂 قائمة الوصول والمنصات التي عليها أرقام في الموقع",
             "",
             f"📚 عدد المنصات المكتشفة: {len(platforms)}",
             f"📦 المنصات المحفوظة حالياً داخل البوت: {len(dynamic_platforms)}",
@@ -5362,27 +5361,48 @@ def _collect_codes_from_window(session: requests.Session, csrf: str, start_date:
     return rows
 
 def _fetch_site_codes_snapshot() -> Dict:
+    """يجلب أحدث الأكواد من صفحة my/messages فقط."""
     session = _build_site_session()
-    page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20)
-    csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
-    if not csrf:
-        raise RuntimeError("تعذر استخراج CSRF token من صفحة الرسائل")
+    rows = _collect_codes_from_messages_pages(session)
+    filtered: List[Dict[str, Any]] = []
+    seen = set()
+    for row in rows:
+        source_name = str(row.get("source") or "").strip().lower()
+        if not source_name.startswith("my_messages"):
+            continue
+        number = _normalize_number(row.get("number", ""))
+        code = str(row.get("code") or "").strip()
+        if not number or not code:
+            continue
+        platform_name = _normalize_platform(row.get("platform") or row.get("service") or GENERAL_PLATFORM_NAME)
+        msg_text = str(row.get("message") or row.get("text") or "").strip()
+        time_value = str(row.get("time") or row.get("date") or row.get("created_at") or "").strip()
+        key = (number, code, platform_name, msg_text, time_value)
+        if key in seen:
+            continue
+        seen.add(key)
+        filtered.append({
+            "bucket": "my_messages",
+            "platform": platform_name,
+            "range": platform_name,
+            "number": number,
+            "code": code,
+            "time": time_value,
+            "sender": str(row.get("sender") or "").strip(),
+            "message": msg_text,
+            "source": source_name,
+        })
 
-    today = datetime.date.today()
-    recent_start = today - datetime.timedelta(days=30)
-    old_start = today - datetime.timedelta(days=365)
-    old_end = today - datetime.timedelta(days=31)
+    def _rank(item: Dict[str, Any]) -> tuple:
+        time_value = str(item.get("time") or "")
+        return (1 if time_value else 0, time_value, len(str(item.get("message") or "")))
 
-    recent_rows = _collect_codes_from_window(session, csrf, recent_start, today, "new", max_ranges=100, max_numbers_per_range=50, max_entries=1000)
-    old_rows = []
-    if old_start <= old_end:
-        old_rows = _collect_codes_from_window(session, csrf, old_start, old_end, "old", max_ranges=50, max_numbers_per_range=20, max_entries=500)
-
+    filtered.sort(key=_rank, reverse=True)
     return {
-        "recent": recent_rows,
-        "old": old_rows,
-        "recent_window": f"{recent_start.isoformat()} → {today.isoformat()}",
-        "old_window": f"{old_start.isoformat()} → {old_end.isoformat()}",
+        "recent": filtered[:100],
+        "old": filtered[100:200],
+        "recent_window": "Latest rows from basha.cc/my/messages",
+        "old_window": "More rows from basha.cc/my/messages",
     }
 
 def _format_site_code_rows(title: str, rows: List[Dict], window_text: str) -> str:
@@ -5407,9 +5427,9 @@ def _report_site_codes(chat_id: int):
     try:
         data = _fetch_site_codes_snapshot()
         text = "\n\n".join([
-            "🧾 جلب الأكواد الجديدة والقديمة من الموقع",
-            _format_site_code_rows("🆕 الأكواد الجديدة", data.get("recent", []), data.get("recent_window", "")),
-            _format_site_code_rows("🗂️ الأكواد القديمة", data.get("old", []), data.get("old_window", "")),
+            "🧾 جلب أكواد الأرقام من صفحة my/messages",
+            _format_site_code_rows("🆕 أحدث أكواد my/messages", data.get("recent", []), data.get("recent_window", "")),
+            _format_site_code_rows("🗂️ أكواد إضافية من my/messages", data.get("old", []), data.get("old_window", "")),
         ])
         _chunked_send(chat_id, text)
     except Exception as codes_err:
@@ -5420,25 +5440,49 @@ def dev_site_platforms_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
-    bot.answer_callback_query(call.id, "الميزة متوقفة", show_alert=True)
-    bot.send_message(call.message.chat.id, "⛔ فحص منصات الموقع متوقف لأن البوت صار يعتمد على الإضافة اليدوية فقط.")
+    bot.answer_callback_query(call.id, "⏳ جاري جلب قائمة المنصات من الموقع...")
+    bot.send_message(call.message.chat.id, "🔄 جاري جلب قائمة الوصول والمنصات التي عليها أرقام من الموقع…")
+    def _do_platforms():
+        try:
+            _report_site_platforms(call.message.chat.id)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ حصل خطأ أثناء جلب المنصات: {e}")
+    threading.Thread(target=_do_platforms, daemon=True).start()
 
 def dev_site_codes_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
-    bot.answer_callback_query(call.id, "الميزة متوقفة", show_alert=True)
-    bot.send_message(call.message.chat.id, "⛔ جلب أكواد الموقع متوقف لأن الجلب من الموقع تم تعطيله.")
+    bot.answer_callback_query(call.id, "⏳ جاري جلب الأكواد من basha.cc/my/messages...")
+    bot.send_message(call.message.chat.id, "🔄 جاري جلب الأكواد الجديدة والقديمة من صفحة my/messages…")
+    def _do_report():
+        try:
+            _report_site_codes(call.message.chat.id)
+        except Exception as e:
+            bot.send_message(call.message.chat.id, f"❌ حصل خطأ أثناء جلب الأكواد: {e}")
+    threading.Thread(target=_do_report, daemon=True).start()
 
 def siteplatforms_command(message):
     if not is_admin(message):
         return
-    bot.reply_to(message, "⛔ أمر فحص منصات الموقع متوقف. البوت الآن يدعم الإضافة اليدوية فقط.")
+    bot.reply_to(message, "🔄 جاري جلب قائمة الوصول والمنصات التي عليها أرقام من الموقع…")
+    def _do_report():
+        try:
+            _report_site_platforms(message.chat.id)
+        except Exception as report_err:
+            bot.send_message(message.chat.id, f"❌ حصل خطأ أثناء جلب المنصات: {report_err}")
+    threading.Thread(target=_do_report, daemon=True).start()
 
 def sitecodes_command(message):
     if not is_admin(message):
         return
-    bot.reply_to(message, "⛔ أمر جلب أكواد الموقع متوقف لأن ربط الموقع تم تعطيله.")
+    bot.reply_to(message, "🔄 جاري جلب الأكواد من صفحة my/messages…")
+    def _do_report():
+        try:
+            _report_site_codes(message.chat.id)
+        except Exception as report_err:
+            bot.send_message(message.chat.id, f"❌ حصل خطأ أثناء جلب الأكواد: {report_err}")
+    threading.Thread(target=_do_report, daemon=True).start()
 
 GENERAL_PLATFORM_NAME = "General"
 
@@ -8184,6 +8228,10 @@ def _build_developer_panel_markup() -> types.InlineKeyboardMarkup:
         types.InlineKeyboardButton('🔐 الاشتراك الإجباري', callback_data='dev_sub_status'),
     )
     mk.add(
+        types.InlineKeyboardButton('📂 قائمة الوصول', callback_data='dev_site_platforms'),
+        types.InlineKeyboardButton('📨 جلب أكواد my/messages', callback_data='dev_site_codes'),
+    )
+    mk.add(
         types.InlineKeyboardButton('💎 الأرقام المدفوعة', callback_data='dev_paid_summary'),
         types.InlineKeyboardButton('📢 قناة المطور', callback_data='dev_channel_info'),
     )
@@ -8372,7 +8420,6 @@ def _dispatch_callback_query(call):
         "check_sub": check_sub_callback,
         "contact_dev": contact_dev_callback,
         "num_change": number_change_callback,
-        "num_check": number_check_callback,
         "num_back_countries": number_back_countries_callback,
         "num_back": number_back_callback,
         "dev_sections": dev_sections_callback,
@@ -8602,16 +8649,34 @@ def _extract_platforms_from_html_loose(page_html: str) -> List[str]:
 
 
 def _scan_site_platforms_live() -> Dict:
+    """يجلب المنصات الفعلية من الموقع عبر scrape الصفحات + يضيف المنصات المحفوظة محلياً."""
     data = {'platforms': [], 'sources': {}, 'counts': {}}
-    allowed = [GENERAL_PLATFORM_NAME]
+    # --- اجلب المنصات من الموقع ---
+    try:
+        scraped = _smart_scrape_homepage()
+        site_platforms = [p for p in (scraped.get('platforms') or []) if str(p or '').strip()]
+    except Exception as scrape_err:
+        logger.warning(f"_scan_site_platforms_live scrape error: {scrape_err}")
+        site_platforms = []
+    # --- اجمع المنصات المحفوظة محلياً مع عدد أرقامها ---
     counts = {}
+    local_platforms = []
     for item in numbers_db.get('numbers', []):
         plat = _clean_platform_name(item.get('platform', ''))
-        if plat and plat != 'General':
+        if plat:
             counts[plat] = counts.get(plat, 0) + 1
-    for platform in allowed:
+            if plat not in local_platforms:
+                local_platforms.append(plat)
+    # --- ادمج الاثنين ---
+    all_platforms = list(dict.fromkeys(site_platforms + local_platforms))
+    for platform in all_platforms:
         data['platforms'].append(platform)
-        data['sources'][platform] = ['whitelist']
+        source_list = []
+        if platform in site_platforms:
+            source_list.append('basha.cc')
+        if platform in local_platforms:
+            source_list.append('local_db')
+        data['sources'][platform] = source_list
     data['counts'] = counts
     return data
 
