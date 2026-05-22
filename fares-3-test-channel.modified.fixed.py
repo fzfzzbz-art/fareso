@@ -489,6 +489,11 @@ def _install_runtime_guardrails_once() -> None:
             _log_uncaught(args.exc_type, args.exc_value, args.exc_traceback)
         threading.excepthook = _thread_hook
 
+HOSTING_SAFE_MODE = _env_flag("HOSTING_SAFE_MODE", True)
+HOSTING_SAFE_MAX_THREADS = max(2, int(str(os.getenv("HOSTING_SAFE_MAX_THREADS", "2") or "2").strip() or "2"))
+if HOSTING_SAFE_MODE:
+    BOT_WORKER_THREADS = max(2, min(BOT_WORKER_THREADS, HOSTING_SAFE_MAX_THREADS))
+
 _HOSTING_HTTP_HOST = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
 
 try:
@@ -496,7 +501,11 @@ try:
 except ValueError:
     _HOSTING_HTTP_PORT = 0
 
-_HOSTING_HTTP_ENABLED = str(os.getenv("HOSTING_HTTP_ENABLED", "1" if _HOSTING_HTTP_PORT else "0")).strip().lower() in {"1", "true", "yes", "on"}
+_INTERNAL_HTTP_SERVER_REQUESTED = _env_flag("HOSTING_HTTP_ENABLED", False) or _env_flag("RUN_INTERNAL_HTTP_SERVER", False)
+_HOSTING_HTTP_ENABLED = bool(_HOSTING_HTTP_PORT > 0 and _INTERNAL_HTTP_SERVER_REQUESTED)
+
+HOSTING_HEARTBEAT_ENABLED = _env_flag("HOSTING_HEARTBEAT_ENABLED", not HOSTING_SAFE_MODE)
+OPTIONAL_BACKGROUND_TASKS_ENABLED = _env_flag("OPTIONAL_BACKGROUND_TASKS_ENABLED", not HOSTING_SAFE_MODE)
 
 _hosting_http_lock = threading.Lock()
 
@@ -9089,14 +9098,21 @@ AUTO_SYNC_INTERVAL_MINUTES = max(1, int(_get("AUTO_SYNC_INTERVAL_MINUTES", "3") 
 
 def _start_background_services() -> None:
     background_tasks = [
-        ('HTTP server', _start_hosting_http_server_once),
-        ('hosting heartbeat', _start_hosting_heartbeat_once),
-        ('test mode publisher', _start_test_mode_publisher_once),
         ('general bootstrap', _bootstrap_general_bucket_once),
-        ('live monitor', _start_live_test_codes_monitor_once),
-        ('auto code watch', _start_auto_code_watch_loop_once),
-        ('auto channel post', _start_auto_channel_post_loop_once),
     ]
+    if _HOSTING_HTTP_ENABLED:
+        background_tasks.insert(0, ('HTTP server', _start_hosting_http_server_once))
+    if HOSTING_HEARTBEAT_ENABLED:
+        background_tasks.append(('hosting heartbeat', _start_hosting_heartbeat_once))
+    if OPTIONAL_BACKGROUND_TASKS_ENABLED:
+        background_tasks.extend([
+            ('test mode publisher', _start_test_mode_publisher_once),
+            ('live monitor', _start_live_test_codes_monitor_once),
+            ('auto code watch', _start_auto_code_watch_loop_once),
+            ('auto channel post', _start_auto_channel_post_loop_once),
+        ])
+    else:
+        logger.info('🛡️ Hosting safe mode enabled: optional background services are disabled to protect the website/server resources.')
     for label, starter in background_tasks:
         try:
             starter()
@@ -9221,66 +9237,3 @@ def _supervise_main_forever() -> None:
 
 if __name__ == '__main__':
     _supervise_main_forever()
-
-(generic_backoff)
-
-
-def main():
-    _install_runtime_guardrails_once()
-    _ensure_single_local_instance()
-    _start_background_services()
-
-    _register_runtime_handlers_once()
-    _register_visible_bot_commands()
-    _restore_wa_queue_from_disk()
-    restored_numbers_count = _bootstrap_numbers_storage()
-    _refresh_dynamic_platforms()
-    _get_numbers_runtime_index()
-
-    logger.info('=' * 60)
-    logger.info('  Bot Pro v4 — Free Hosting Stable Start')
-    logger.info('=' * 60)
-
-    _start_wa_retry_worker_once()
-    current_count = _maybe_run_initial_sync()
-    _notify_admin_startup(restored_numbers_count, current_count)
-
-    log_event('BOT_STARTED', {
-        'numbers': current_count,
-        'platforms': len(_platform_picker_platforms()),
-        'auto_sync': AUTO_SYNC_NUMBERS,
-        'sync_interval_minutes': AUTO_SYNC_INTERVAL_MINUTES,
-    })
-
-    try:
-        bot.remove_webhook()
-    except Exception as webhook_err:
-        logger.warning(f'Webhook cleanup warning: {webhook_err}')
-
-    if AUTO_SYNC_NUMBERS:
-        logger.info('🔄 المزامنة التلقائية للأرقام مفعّلة.')
-        _start_auto_sync_loop_once()
-    else:
-        logger.info('⏸️ المزامنة التلقائية للأرقام متوقفة.')
-
-    _run_polling_forever()
-
-def _supervise_main_forever() -> None:
-    restart_delay = 5
-    while True:
-        try:
-            main()
-            logger.warning(f'main() exited unexpectedly; restarting in {restart_delay}s')
-        except KeyboardInterrupt:
-            logger.info('🛑 تم إيقاف البوت يدوياً من الطرفية.')
-            break
-        except Exception as fatal_err:
-            logger.exception(f'Fatal top-level crash, restarting in {restart_delay}s: {fatal_err}')
-        time.sleep(restart_delay)
-
-
-if __name__ == '__main__':
-    _supervise_main_forever()
-
-
-
