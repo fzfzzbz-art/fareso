@@ -5857,7 +5857,6 @@ def _dedupe_site_country_rows(items: List[Dict]) -> List[Dict]:
 
 def _site_add_country_buckets(rows: List[Dict]) -> List[Dict]:
     buckets: Dict[str, Dict] = {}
-    per_country_limit = 100
     for item in rows or []:
         row = _enrich_number_item(item)
         number = _normalize_number(row.get('number', ''))
@@ -5906,28 +5905,23 @@ def _site_add_country_buckets(rows: List[Dict]) -> List[Dict]:
 
         all_rows = list(bucket.pop('rows', []))
         all_rows.sort(key=lambda row: str(row.get('number') or ''))
-        duplicate_total = max(1, (len(all_rows) + per_country_limit - 1) // per_country_limit)
-        for duplicate_index in range(duplicate_total):
-            start = duplicate_index * per_country_limit
-            end = start + per_country_limit
-            chunk_rows = [dict(item) for item in all_rows[start:end]]
-            if not chunk_rows:
-                continue
-            final_buckets.append({
-                'base_key': bucket.get('base_key', 'unknown'),
-                'key': f"{bucket.get('base_key', 'unknown')}::{duplicate_index + 1}",
-                'name': bucket.get('name', 'غير محددة'),
-                'display_name': bucket.get('name', 'غير محددة'),
-                'flag': bucket.get('flag', '🌐'),
-                'code': bucket.get('code', ''),
-                'total': len(chunk_rows),
-                'raw_total': len(chunk_rows),
-                'rows': chunk_rows,
-                'duplicate_index': duplicate_index + 1,
-                'duplicate_total': duplicate_total,
-                'is_duplicate': duplicate_total > 1,
-                'source_hint': source_hint,
-            })
+        if not all_rows:
+            continue
+        final_buckets.append({
+            'base_key': bucket.get('base_key', 'unknown'),
+            'key': bucket.get('base_key', 'unknown'),
+            'name': bucket.get('name', 'غير محددة'),
+            'display_name': bucket.get('name', 'غير محددة'),
+            'flag': bucket.get('flag', '🌐'),
+            'code': bucket.get('code', ''),
+            'total': len(all_rows),
+            'raw_total': len(all_rows),
+            'rows': [dict(item) for item in all_rows],
+            'duplicate_index': 1,
+            'duplicate_total': 1,
+            'is_duplicate': False,
+            'source_hint': source_hint,
+        })
 
     final_buckets.sort(key=lambda bucket: (bucket.get('name', ''), int(bucket.get('duplicate_index', 1) or 1), bucket.get('key', '')))
     return final_buckets
@@ -7721,7 +7715,6 @@ def _build_numbers_runtime_index() -> Dict[str, Any]:
     platform_country_base_rows: Dict[str, Dict[str, List[Dict]]] = {}
     platform_country_meta: Dict[str, Dict[str, Dict[str, Any]]] = {}
     raw_items = list(numbers_db.get('numbers', [])) if isinstance(numbers_db, dict) else []
-    per_country_limit = 100
 
     for item in raw_items:
         row = _enrich_number_item(item)
@@ -7769,28 +7762,22 @@ def _build_numbers_runtime_index() -> Dict[str, Any]:
         for base_key, rows in country_map.items():
             sorted_rows = [dict(item) for item in rows]
             sorted_rows.sort(key=lambda row: str(row.get('number') or ''))
+            if not sorted_rows:
+                continue
             meta = meta_map.get(base_key, {})
-            duplicate_total = max(1, (len(sorted_rows) + per_country_limit - 1) // per_country_limit)
-            for duplicate_index in range(duplicate_total):
-                start = duplicate_index * per_country_limit
-                end = start + per_country_limit
-                chunk_rows = [dict(item) for item in sorted_rows[start:end]]
-                if not chunk_rows:
-                    continue
-                chunk_key = f"{base_key}::{duplicate_index + 1}"
-                grouped_items.append({
-                    'key': chunk_key,
-                    'base_key': base_key,
-                    'name': meta.get('name', 'غير محددة'),
-                    'flag': meta.get('flag', '🌐'),
-                    'code': meta.get('code', ''),
-                    'digits_code': meta.get('digits_code', ''),
-                    'count': len(chunk_rows),
-                    'duplicate_index': duplicate_index + 1,
-                    'duplicate_total': duplicate_total,
-                    'is_duplicate': duplicate_total > 1,
-                })
-                platform_country_rows.setdefault(platform, {})[chunk_key] = chunk_rows
+            grouped_items.append({
+                'key': base_key,
+                'base_key': base_key,
+                'name': meta.get('name', 'غير محددة'),
+                'flag': meta.get('flag', '🌐'),
+                'code': meta.get('code', ''),
+                'digits_code': meta.get('digits_code', ''),
+                'count': len(sorted_rows),
+                'duplicate_index': 1,
+                'duplicate_total': 1,
+                'is_duplicate': False,
+            })
+            platform_country_rows.setdefault(platform, {})[base_key] = sorted_rows
         country_groups[platform] = sorted(
             grouped_items,
             key=lambda item: (
@@ -8979,9 +8966,11 @@ def _start_auto_sync_loop_once() -> None:
         _auto_sync_started = True
     threading.Thread(target=auto_sync_loop, daemon=True, name="auto-sync-loop").start()
 
-AUTO_CHANNEL_POST_ENABLED = _env_flag("AUTO_CHANNEL_POST_ENABLED", False)
+AUTO_CHANNEL_POST_ENABLED = _env_flag("AUTO_CHANNEL_POST_ENABLED", True)
 AUTO_CHANNEL_POST_INTERVAL_MINUTES = max(3, int(_get("AUTO_CHANNEL_POST_INTERVAL_MINUTES", "3") or "3"))
 _auto_channel_post_started = False
+_auto_channel_post_lock = threading.Lock()
+_auto_channel_post_last_message_ids: List[int] = []
 
 # يمكن تعطيل المهام التلقائية بالكامل من البيئة عند الحاجة فقط.
 FORCE_DISABLE_AUTO_UPDATES = _env_flag("FORCE_DISABLE_AUTO_UPDATES", False)
@@ -8993,20 +8982,83 @@ if FORCE_DISABLE_AUTO_UPDATES:
     LIVE_TEST_CODES_MONITOR_ENABLED = False
 
 
+def _auto_channel_post_platforms() -> List[str]:
+    platforms = []
+    for platform in list(_platform_picker_platforms()) or list(_TEST_MODE_SERVICES):
+        normalized = _normalize_platform(platform)
+        if normalized and normalized not in platforms:
+            platforms.append(normalized)
+    return platforms or [GENERAL_PLATFORM_NAME]
+
+
+def _build_auto_channel_post_messages(max_length: int = 3900) -> List[str]:
+    platforms = _auto_channel_post_platforms()
+    header = (
+        "🔄 <b>تحديث تلقائي للأرقام العشوائية</b>\n"
+        f"⏱ يتجدد كل {AUTO_CHANNEL_POST_INTERVAL_MINUTES} دقائق\n"
+        f"🌐 عدد المنصات: {len(platforms)}\n"
+        f"🕒 {html.escape(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))}\n\n"
+    )
+    messages: List[str] = []
+    current = header
+    for idx, platform in enumerate(platforms, 1):
+        country = _random_test_country()
+        item = _generate_test_mode_item_for_country(country, service=platform, seed_index=idx)
+        block = (
+            f"{idx}) <b>{html.escape(_display_platform_name(platform))}</b>\n"
+            f"📱 <code>{html.escape(str(item.get('number', '') or ''))}</code>\n"
+            f"🔐 <code>{html.escape(str(item.get('code', '') or ''))}</code>\n"
+            f"🏷️ المنصة: {html.escape(_display_platform_name(platform))}\n"
+            f"🌍 {html.escape(str(item.get('country_flag', '🌐') or '🌐'))} {html.escape(str(item.get('country_name', 'غير محددة') or 'غير محددة'))}\n\n"
+        )
+        if len(current) + len(block) > max_length and current.strip() != header.strip():
+            messages.append(current.rstrip())
+            current = header + block
+        else:
+            current += block
+    if current.strip():
+        messages.append(current.rstrip())
+    return messages or [header + _build_test_mode_message_text(_generate_test_mode_item())]
+
+
 def _build_auto_channel_post_text() -> str:
-    messages = _build_test_mode_broadcast_messages(max_length=3500)
+    messages = _build_auto_channel_post_messages(max_length=3900)
     return messages[0] if messages else _build_test_mode_message_text(_generate_test_mode_item())
 
 
+def _delete_previous_auto_channel_messages() -> None:
+    if not CHANNEL_ID:
+        return
+    with _auto_channel_post_lock:
+        previous_ids = [int(mid) for mid in _auto_channel_post_last_message_ids if str(mid).isdigit()]
+        _auto_channel_post_last_message_ids.clear()
+    for message_id in previous_ids:
+        try:
+            bot.delete_message(CHANNEL_ID, message_id)
+            time.sleep(0.15)
+        except Exception:
+            pass
+
+
 def _post_auto_channel_message_once():
-    for text_value in _build_test_mode_broadcast_messages(max_length=3500):
-        bot.send_message(
+    if not CHANNEL_ID:
+        logger.info('⏸️ النشر التلقائي متوقف لأن CHANNEL_ID غير مضبوط.')
+        return
+    _delete_previous_auto_channel_messages()
+    sent_ids: List[int] = []
+    for text_value in _build_auto_channel_post_messages(max_length=3900):
+        sent_message = bot.send_message(
             CHANNEL_ID,
             text_value,
             parse_mode='HTML',
             reply_markup=_build_channel_post_markup(),
         )
+        message_id = getattr(sent_message, 'message_id', None)
+        if isinstance(message_id, int):
+            sent_ids.append(message_id)
         time.sleep(0.35)
+    with _auto_channel_post_lock:
+        _auto_channel_post_last_message_ids[:] = sent_ids
 
 
 def _start_auto_channel_post_loop_once():
