@@ -146,6 +146,7 @@ _DEFAULTS = {
     # روابط المواقع (تم التحديث لموقع باشا)
     "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
     "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
+    "MESSAGES_URL": os.environ.get("MESSAGES_URL", "https://basha.cc/my/messages"),
     
     # بيانات الحساب (تُقرأ من Render)
     "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
@@ -186,6 +187,10 @@ BOT_TOKEN        = _get("BOT_TOKEN")
 ADMIN_ID         = int(_get("ADMIN_ID", "0") or "0")
 
 SITE_URL         = _get("SITE_URL", "https://basha.cc")
+
+RANGES_URL       = _get("RANGES_URL", f"{SITE_URL}/my/ranges")
+
+MESSAGES_URL     = _get("MESSAGES_URL", f"{SITE_URL}/my/messages")
 
 API_TOKEN        = _get("API_TOKEN", "")
 
@@ -690,13 +695,17 @@ def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
         "logout",
         "account code",
         "my numbers",
+        "my ranges",
+        "my messages",
         "client active sms",
         "my sms statistics",
         "portal/profile",
+        "/my/ranges",
+        "/my/messages",
     ]
-    if "/portal" in final_url or "/portal/profile" in final_url:
+    if any(marker in final_url for marker in ("/portal", "/portal/profile", "/my/ranges", "/my/messages")):
         return True
-    return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 2
+    return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 1
 
 def _login_site_with_credentials(session: requests.Session) -> bool:
     """محاولة تسجيل الدخول بالبريد/كلمة المرور وتحديث الكوكيز تلقائياً."""
@@ -841,14 +850,21 @@ def _build_site_session() -> requests.Session:
     if not loaded_from_file and not restored_from_bootstrap:
         _apply_site_cookie(session, SITE_COOKIE or "")
 
-    try:
-        probe = session.get(f"{SITE_URL}/portal", timeout=12, allow_redirects=True)
-        if _is_authenticated_response(probe):
-            logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
-            _store_site_session_bootstrap(session)
-            return session
-    except Exception as probe_err:
-        logger.warning(f"Site probe warning: {probe_err}")
+    probe_urls = [
+        RANGES_URL,
+        MESSAGES_URL,
+        f"{SITE_URL}/portal",
+        f"{SITE_URL}/portal/profile",
+    ]
+    for probe_url in list(dict.fromkeys([str(url or '').strip() for url in probe_urls if str(url or '').strip()])):
+        try:
+            probe = session.get(probe_url, timeout=12, allow_redirects=True)
+            if _is_authenticated_response(probe):
+                logger.info(f"✅ تم التحقق من جلسة الموقع بنجاح عبر {probe_url}")
+                _store_site_session_bootstrap(session)
+                return session
+        except Exception as probe_err:
+            logger.warning(f"Site probe warning [{probe_url}]: {probe_err}")
 
     if SITE_EMAIL and SITE_PASS:
         if _login_site_with_credentials(session):
@@ -1148,6 +1164,18 @@ def _extract_csrf_token(page_html: str) -> str:
             return match.group(1).strip()
     return ""
 
+def _site_url_candidates(*urls: str) -> List[str]:
+    found: List[str] = []
+    seen = set()
+    for raw_url in urls:
+        clean_url = str(raw_url or "").strip()
+        if not clean_url or clean_url in seen:
+            continue
+        seen.add(clean_url)
+        found.append(clean_url)
+    return found
+
+
 def _strip_html_text(value: str) -> str:
     text_value = re.sub(r"<br\s*/?>", "\n", str(value or ""), flags=re.IGNORECASE)
     text_value = re.sub(r"<[^>]+>", " ", text_value)
@@ -1155,20 +1183,53 @@ def _strip_html_text(value: str) -> str:
     return re.sub(r"\s+", " ", text_value).strip()
 
 def _extract_ranges_from_summary(summary_html: str) -> List[str]:
-    found = []
-    for match in re.finditer(r"toggleRange\('([^']+)'", summary_html or ""):
-        range_name = match.group(1).strip()
-        if range_name and range_name not in found:
-            found.append(range_name)
+    found: List[str] = []
+    raw_html = str(summary_html or "")
+    if not raw_html:
+        return found
+
+    patterns = [
+        r'toggleRange\(\s*[\'"]([^\'"]+)[\'"]',
+        r'data-range\s*=\s*[\'"]([^\'"]+)[\'"]',
+        r'range\s*[:=]\s*[\'"]([^\'"]+)[\'"]',
+        r'name\s*=\s*[\'"]range[\'"][^>]*value\s*=\s*[\'"]([^\'"]+)[\'"]',
+    ]
+    for pattern in patterns:
+        for match in re.findall(pattern, raw_html, flags=re.IGNORECASE):
+            candidate = _strip_html_text(match)
+            if candidate and candidate not in found:
+                found.append(candidate)
+
+    link_matches = re.findall(r'<a[^>]+href=[\"\']([^\"\']+)[\"\'][^>]*>(.*?)</a>', raw_html, flags=re.IGNORECASE | re.DOTALL)
+    for href, label in link_matches:
+        href_text = str(href or "").strip()
+        label_text = _strip_html_text(label)
+        if "/range" in href_text.lower() or "range=" in href_text.lower() or "/my/ranges" in href_text.lower():
+            candidate = label_text or urllib.parse.unquote(href_text.rsplit("/", 1)[-1].split("?", 1)[0])
+            candidate = _strip_html_text(candidate)
+            if candidate and candidate not in found:
+                found.append(candidate)
     return found
 
+
 def _extract_number_rows(range_html: str) -> List[str]:
-    found = []
-    for match in re.finditer(r"toggleNum\w*\('([^']+)'", range_html or ""):
+    found: List[str] = []
+    raw_html = str(range_html or "")
+    if not raw_html:
+        return found
+
+    for match in re.finditer(r'toggleNum\w*\(\s*[\'"]([^\'"]+)[\'"]', raw_html, flags=re.IGNORECASE):
         number = _normalize_number(match.group(1))
         if number and number not in found:
             found.append(number)
+
+    for number in _extract_phone_candidates_from_text(raw_html):
+        normalized = _normalize_number(number)
+        if normalized and normalized not in found:
+            found.append(normalized)
+
     return found
+
 
 def _extract_sms_entries(sms_html: str) -> List[Dict]:
     """
@@ -1467,6 +1528,7 @@ def _fetch_latest_live_code_for_number(number: str, platform_hint: str = '') -> 
 
     page_tokens: Dict[str, str] = {}
     page_jobs = [
+        ('messages', MESSAGES_URL),
         ('my_sms', f'{SITE_URL}/portal/live/my_sms'),
         ('test_system', f'{SITE_URL}/portal/live/test-system'),
     ]
@@ -1552,9 +1614,9 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
         session = _build_site_session()
         session.headers.update({
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{SITE_URL}/portal/sms/received",
+            "Referer": MESSAGES_URL,
         })
-        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20)
+        page_resp = session.get(MESSAGES_URL, timeout=20)
         csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
         if not csrf:
             logger.warning("تعذر استخراج CSRF token من صفحة الرسائل")
@@ -1736,6 +1798,8 @@ def _smart_scrape_homepage() -> dict:
 
         # الصفحات المرشحة للسحب
         candidate_pages = [
+            RANGES_URL,
+            MESSAGES_URL,
             f"{SITE_URL}/portal/numbers",
             f"{SITE_URL}/portal/live/my_sms",
             f"{SITE_URL}/portal/sms/received",
@@ -5331,8 +5395,8 @@ SITE_ADD_FAST_SOURCE_TIMEOUT_SECONDS = max(6.0, float(str(_get("SITE_ADD_FAST_SO
 SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS = max(12.0, float(str(_get("SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS", "18") or "18").strip() or "18"))
 _site_add_jobs_lock = threading.RLock()
 _site_add_jobs: set = set()
-SITE_ADD_SOURCE_PAGE = f"{SITE_URL}/portal/live/my_sms"
-SITE_ADD_SOURCE_LABEL = "my_sms"
+SITE_ADD_SOURCE_PAGE = RANGES_URL
+SITE_ADD_SOURCE_LABEL = "ranges"
 
 
 def _merge_site_add_datasets(*datasets: Dict) -> Dict:
@@ -5635,14 +5699,36 @@ def _extract_live_my_sms_rows_from_html(page_html: str) -> List[Dict]:
 
 def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) -> List[Dict]:
     session = session or _build_site_session()
-    page_resp = session.get(SITE_ADD_SOURCE_PAGE, timeout=30, allow_redirects=True)
-    if not _is_authenticated_response(page_resp):
-        raise RuntimeError('تعذر فتح صفحة my_sms. تأكد من الكوكيز أو تسجيل الدخول.')
+    page_candidates = _site_url_candidates(
+        SITE_ADD_SOURCE_PAGE,
+        RANGES_URL,
+        f'{SITE_URL}/portal/live/my_sms',
+        f'{SITE_URL}/portal/numbers',
+    )
 
     collected: List[Dict] = []
-    page_html = getattr(page_resp, 'text', '') or ''
-    csrf = _extract_csrf_token(page_html)
-    page_rows = _extract_live_my_sms_rows_from_html(page_html)
+    csrf = ''
+    active_page = SITE_ADD_SOURCE_PAGE
+
+    for page_url in page_candidates:
+        try:
+            page_resp = session.get(page_url, timeout=30, allow_redirects=True)
+        except Exception as page_err:
+            logger.debug(f'page probe failed for {page_url}: {page_err}')
+            continue
+        if not _is_authenticated_response(page_resp):
+            continue
+        active_page = page_url
+        page_html = getattr(page_resp, 'text', '') or ''
+        csrf = _extract_csrf_token(page_html) or csrf
+        page_rows = _extract_live_my_sms_rows_from_html(page_html)
+        if page_rows:
+            collected.extend(page_rows)
+            if len(page_rows) >= 3:
+                break
+
+    if not collected and not csrf:
+        raise RuntimeError('تعذر فتح صفحة ranges / numbers. تأكد من الكوكيز أو تسجيل الدخول.')
 
     ajax_candidates = [
         (f'{SITE_URL}/portal/live/my_sms/get', 'post'),
@@ -5655,7 +5741,7 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
         (f'{SITE_URL}/portal/live/my_sms/table', 'get'),
     ]
     headers = {
-        'Referer': SITE_ADD_SOURCE_PAGE,
+        'Referer': active_page,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json, text/plain, text/html, */*',
     }
@@ -5695,9 +5781,6 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
                     collected.extend(_extract_live_my_sms_rows_from_html(getattr(resp, 'text', '') or ''))
             except Exception as ajax_err:
                 logger.debug(f'live my_sms ajax probe failed for {endpoint} [{method}]: {ajax_err}')
-
-    if page_rows:
-        collected.extend(page_rows)
 
     if not collected:
         try:
@@ -5893,7 +5976,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
 
     for attempt_index in range(attempts):
         quick_jobs = [
-            ('my_sms', SITE_ADD_SOURCE_PAGE, lambda: _fetch_numbers_from_live_my_sms(_build_site_session())),
+            ('my_ranges', SITE_ADD_SOURCE_PAGE, lambda: _fetch_numbers_from_live_my_sms(_build_site_session())),
             ('portal_numbers', f'{SITE_URL}/portal/numbers', lambda: _fetch_numbers_from_portal(_build_site_session())),
             ('homepage_scrape', f'{SITE_URL}/portal', _fetch_numbers_from_homepage_scrape),
         ]
@@ -5926,7 +6009,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
         should_try_slow_source = countries_count < SITE_ADD_MIN_COUNTRIES and (refresh or not deduped_quick_rows or countries_count <= 1)
         if should_try_slow_source:
             slow_rows, slow_counts, slow_labels, slow_urls = _run_source_jobs([
-                ('sms_ranges', f'{SITE_URL}/portal/sms/received', lambda: _fetch_numbers_from_sms_ranges(_build_site_session())),
+                ('sms_ranges', RANGES_URL, lambda: _fetch_numbers_from_sms_ranges(_build_site_session())),
             ], SITE_ADD_SLOW_SOURCE_TIMEOUT_SECONDS)
             if slow_rows:
                 deduped_slow_rows = _dedupe_numbers(slow_rows)
@@ -5940,7 +6023,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
                     'created_at': datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
                     'source_label': ' + '.join(slow_labels) if slow_labels else SITE_ADD_SOURCE_LABEL,
                     'source_counts': slow_counts,
-                    'page_url': ' | '.join(slow_urls) if slow_urls else f'{SITE_URL}/portal/sms/received',
+                    'page_url': ' | '.join(slow_urls) if slow_urls else RANGES_URL,
                     'page_urls': slow_urls,
                     'total_numbers': len(deduped_slow_rows),
                 })
@@ -8145,32 +8228,55 @@ def _register_visible_bot_commands():
         logger.warning(f"تعذر تسجيل أوامر البوت: {cmd_err}")
 
 def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
-    """نسخة آمنة: تحدّ من عدد الرينجات والزمن الكلي حتى لا يثقل البوت."""
+    """يسحب الأرقام من صفحة /my/ranges أولاً ثم يرجع للاسكربت القديم عند الحاجة."""
     collected: List[Dict] = []
     started_at = time.time()
     try:
+        # 1) المصدر الجديد المباشر: /my/ranges
+        try:
+            direct_resp = session.get(RANGES_URL, timeout=20, allow_redirects=True)
+            if _is_authenticated_response(direct_resp):
+                direct_html = getattr(direct_resp, 'text', '') or ''
+                direct_numbers = _extract_number_rows(direct_html)
+                for number in direct_numbers:
+                    collected.append({
+                        'number': number,
+                        'platform': _guess_platform_from_payload('ranges') or GENERAL_PLATFORM_NAME,
+                        'site_section': 'ranges',
+                        'source': 'my_ranges_html',
+                        'added_at': time.ctime(),
+                    })
+                if collected:
+                    return _dedupe_numbers(collected)
+        except Exception as direct_err:
+            logger.warning(f'my/ranges direct fetch failed: {direct_err}')
+
+        # 2) fallback القديم لو الصفحة الجديدة لم تُرجع أرقاماً
         session.headers.update({
-            "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{SITE_URL}/portal/sms/received",
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': MESSAGES_URL,
         })
-        page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=15)
-        csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
+        page_resp = session.get(MESSAGES_URL, timeout=15)
+        csrf = _extract_csrf_token(getattr(page_resp, 'text', ''))
         if not csrf:
-            return collected
+            page_resp = session.get(f'{SITE_URL}/portal/sms/received', timeout=15)
+            csrf = _extract_csrf_token(getattr(page_resp, 'text', ''))
+        if not csrf:
+            return _dedupe_numbers(collected)
 
         today = datetime.date.today()
         for days in (7, 30, 90):
             if time.time() - started_at > SITE_SYNC_MAX_SECONDS:
                 logger.warning(
-                    f"SMS range sync stopped بسبب تجاوز المهلة الكلية ({SITE_SYNC_MAX_SECONDS}s)"
+                    f'SMS range sync stopped بسبب تجاوز المهلة الكلية ({SITE_SYNC_MAX_SECONDS}s)'
                 )
                 break
 
             start = today - datetime.timedelta(days=days)
             end = today
             summary_resp = session.post(
-                f"{SITE_URL}/portal/sms/received/getsms",
-                data={"from": start.isoformat(), "to": end.isoformat(), "_token": csrf},
+                f'{SITE_URL}/portal/sms/received/getsms',
+                data={'from': start.isoformat(), 'to': end.isoformat(), '_token': csrf},
                 timeout=18,
             )
             if summary_resp.status_code != 200:
@@ -8186,7 +8292,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
             for idx, range_name in enumerate(ranges, start=1):
                 if time.time() - started_at > SITE_SYNC_MAX_SECONDS:
                     logger.warning(
-                        f"SMS range sync stopped أثناء المعالجة بعد {idx - 1} رينج بسبب المهلة الكلية"
+                        f'SMS range sync stopped أثناء المعالجة بعد {idx - 1} رينج بسبب المهلة الكلية'
                     )
                     return _dedupe_numbers(collected)
 
@@ -8196,17 +8302,17 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
 
                 try:
                     range_resp = session.post(
-                        f"{SITE_URL}/portal/sms/received/getsms/number",
+                        f'{SITE_URL}/portal/sms/received/getsms/number',
                         data={
-                            "_token": csrf,
-                            "start": start.isoformat(),
-                            "end": end.isoformat(),
-                            "range": range_name,
+                            '_token': csrf,
+                            'start': start.isoformat(),
+                            'end': end.isoformat(),
+                            'range': range_name,
                         },
                         timeout=18,
                     )
                 except Exception as range_err:
-                    logger.warning(f"Range fetch failed for {range_name}: {range_err}")
+                    logger.warning(f'Range fetch failed for {range_name}: {range_err}')
                     continue
 
                 if range_resp.status_code != 200:
@@ -8214,17 +8320,17 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
 
                 for number in _extract_number_rows(range_resp.text):
                     collected.append({
-                        "number": number,
-                        "platform": platform,
-                        "site_section": str(range_name).strip(),
-                        "source": "sms_range",
-                        "added_at": time.ctime(),
+                        'number': number,
+                        'platform': platform,
+                        'site_section': str(range_name).strip(),
+                        'source': 'sms_range',
+                        'added_at': time.ctime(),
                     })
 
             if collected:
                 break
     except Exception as sms_range_err:
-        logger.warning(f"SMS range sync error (stability hotfix): {sms_range_err}")
+        logger.warning(f'SMS range sync error (stability hotfix): {sms_range_err}')
     return _dedupe_numbers(collected)
 
 def _notify_code_to_channel(number: str, platform: str, code: str, country_info: Optional[Dict] = None, received_at: str = "", sms_text: str = ""):
