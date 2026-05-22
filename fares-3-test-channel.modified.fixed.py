@@ -94,24 +94,24 @@ _DEFAULTS = {
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
 
     # روابط الموقع الحالية (Basha IPRN VAS)
-    "SITE_URL": os.environ.get("SITE_URL", "https://www.ivasms.com/login"),
-    "HOME_URL": os.environ.get("HOME_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "RANGES_URL": os.environ.get("RANGES_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://www.ivasms.com/portal/live/my_sms/data"),
-    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://www.ivasms.com/portal/live/my_sms/data"),
-    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://www.ivasms.com/portal/live/my_sms"),
-    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://www.ivasms.com/portal/live/my_sms/data"),
-    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
+    "HOME_URL": os.environ.get("HOME_URL", "https://basha.cc/home"),
+    "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
+    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
+    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
+    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers"),
+    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
+    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
+    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
+    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
+    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
+    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
+    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/telegram-setup"),
     "SITE_TELEGRAM_CHAT_ID": os.environ.get("SITE_TELEGRAM_CHAT_ID", os.environ.get("ADMIN_ID", "")),
 
     # بيانات الحساب (تُقرأ من البيئة)
-    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "fareesaltmimii57@gmail.com"),
-    "SITE_PASS": os.environ.get("SITE_PASS", "Vr9bxG7R!mjrRZ"),
+    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
+    "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
     "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
 
     # الكوكيز والتمويه
@@ -120,6 +120,30 @@ _DEFAULTS = {
     "SITE_COOKIE_FILE": "runtime_cookies.json"
 }
 
+EMBEDDED_SITE_COOKIES = [
+    {
+        "name": "ivas_sms_session",
+        "value": "eyJpdiI6InIzRkw2UVNkdjcyK2Z5Mk1UVWhIUHc9PSIsInZhbHVlIjoiQlc3OERhWkUrYmUrbWlLNXR6QjBiMVdETWNxeC9lVzIvbHNQaVE2R2duOEJEY0VhSzhrSUM0cW1XMTJVR0VCMkJpM3dJTkhXNkwzaXkyckwwYXpvaUdrblBYMmtIYllReXVMY2JGZjlLTVNMa0l1WkxDZVp5YzZocUJrZmtER0EiLCJtYWMiOiJiYzI5NTA0MWY4Mjg0ZTY5MDU0NTZiMmQ2MDgxMGYyM2E3ZjVkNzliYTlmNDJlZjI5YWI1YzI3YjdlYTFmMGEzIiwidGFnIjoiIn0%3D",
+        "domain": "www.ivasms.com",
+        "path": "/",
+        "expires": 1779472200.636235,
+        "httpOnly": True,
+        "secure": False,
+        "sameSite": "lax",
+        "origin": "https://www.ivasms.com",
+    },
+    {
+        "name": "XSRF-TOKEN",
+        "value": "eyJpdiI6IlgyQzhvWWlZa3h3ckRaMDljY3hlZ1E9PSIsInZhbHVlIjoiUDBLVEVlK3JjRnFMbU5nVTBaZEQ3UXpXUWJiMVRZbEtnVHk3WkN6Mmx2VDAzOXNxQXlFWjFIMjdBWk9CeENyMk1LNUQ1enNMTzlHaW1JQjhDNlNnWk40dUJSVWt4UXpUTE5YZk1rZFMyQjVIdllxUnNvVnY0aGtGNFdhblhvc3QiLCJtYWMiOiI1Y2ViMWM4OWJlNzI3MGNjNGY0MGM5NGI5NGU3ODM0NjU2ZGY5Y2QzMzNhNWFkNmVkM2JjZjNkOTc1YjM2OGY0IiwidGFnIjoiIn0%3D",
+        "domain": "www.ivasms.com",
+        "path": "/",
+        "expires": 1779472200.636071,
+        "httpOnly": False,
+        "secure": False,
+        "sameSite": "lax",
+        "origin": "https://www.ivasms.com",
+    },
+]
 
 def _get(key: str, fallback: str = "") -> str:
     """يقرأ المتغير من البيئة أولاً، وإن لم يجده يرجع القيمة المدمجة."""
@@ -662,6 +686,44 @@ def _refresh_xsrf_header(session: requests.Session):
     else:
         session.headers.pop("X-XSRF-TOKEN", None)
 
+
+def _cookie_header_from_session(session: requests.Session) -> str:
+    host = _cookie_host()
+    ordered = []
+    for cookie in session.cookies:
+        name = str(getattr(cookie, "name", "") or "").strip()
+        value = str(getattr(cookie, "value", "") or "").strip()
+        if not name or not value:
+            continue
+        if _cookie_domain_rank(getattr(cookie, "domain", ""), host) <= 0:
+            continue
+        ordered.append((
+            -_cookie_domain_rank(getattr(cookie, "domain", ""), host),
+            0 if (getattr(cookie, "path", "/") or "/") == "/" else 1,
+            name.lower(),
+            f"{name}={value}",
+        ))
+    ordered.sort()
+    return "; ".join(item[-1] for item in ordered)
+
+
+def _refresh_site_security_headers(session: requests.Session) -> None:
+    _refresh_xsrf_header(session)
+    xsrf = _pick_cookie_value(session, "XSRF-TOKEN", "XSRF_TOKEN")
+    if xsrf:
+        decoded = urllib.parse.unquote(xsrf)
+        session.headers["X-CSRF-TOKEN"] = decoded
+        session.headers["X-XSRF-TOKEN"] = decoded
+    else:
+        session.headers.pop("X-CSRF-TOKEN", None)
+        session.headers.pop("X-XSRF-TOKEN", None)
+
+    cookie_header = _cookie_header_from_session(session)
+    if cookie_header:
+        session.headers["Cookie"] = cookie_header
+    else:
+        session.headers.pop("Cookie", None)
+
 def _cookie_file_candidates() -> List[Path]:
     seen = set()
     candidates = []
@@ -693,13 +755,13 @@ def _load_cookie_items(session: requests.Session, items, source_label: str) -> b
         value = str(item.get("value") or "").strip()
         if not name or not value:
             continue
-        domain = item.get("domain") or host
-        path = item.get("path") or "/"
+        domain = str(item.get("domain") or host).strip() or host
+        path = str(item.get("path") or "/").strip() or "/"
         session.cookies.set(name, value, domain=domain, path=path)
         loaded += 1
 
     if loaded:
-        _refresh_xsrf_header(session)
+        _refresh_site_security_headers(session)
         logger.info(f"🍪 تم تحميل {loaded} كوكي من {source_label}")
         return True
     return False
@@ -734,7 +796,7 @@ def _apply_site_cookie(session: requests.Session, cookie_blob: str):
                     session.cookies.set(name, value, domain=host, path="/")
         else:
             session.cookies.set("ivas_sms_session", cookie_blob, domain=host, path="/")
-        _refresh_xsrf_header(session)
+        _refresh_site_security_headers(session)
     except Exception as cookie_err:
         logger.warning(f"SITE_COOKIE parse warning: {cookie_err}")
 
@@ -764,6 +826,130 @@ def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
     if "/portal" in final_url or "/portal/profile" in final_url:
         return True
     return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 2
+
+
+def _is_cloudflare_response(resp: Optional[requests.Response]) -> bool:
+    if not resp:
+        return False
+    try:
+        status = int(getattr(resp, "status_code", 0) or 0)
+    except Exception:
+        status = 0
+    page = (getattr(resp, "text", "") or "").lower()
+    server = str(getattr(resp, "headers", {}).get("server", "") or "").lower()
+    markers = (
+        "just a moment",
+        "attention required",
+        "cf-browser-verification",
+        "challenges.cloudflare.com",
+        "cloudflare",
+    )
+    return status in {403, 429, 503} and ("cloudflare" in server or any(marker in page for marker in markers))
+
+
+def _site_session_has_auth_cookie(session: Optional[requests.Session]) -> bool:
+    if not session:
+        return False
+    return bool(_pick_cookie_value(session, "ivas_sms_session", "laravel_session", "session", "SESSION", "cf_clearance"))
+
+
+def _extract_live_my_sms_ajax_endpoints(page_html: str) -> List[Tuple[str, str]]:
+    discovered: List[Tuple[str, str]] = []
+    seen = set()
+
+    def _push(url_value: str, method: str = "post") -> None:
+        url_value = str(url_value or "").strip()
+        method = str(method or "post").strip().lower() or "post"
+        if not url_value:
+            return
+        if url_value.startswith("//"):
+            url_value = f"https:{url_value}"
+        elif url_value.startswith("/"):
+            url_value = urllib.parse.urljoin(SITE_URL, url_value)
+        elif not url_value.startswith("http"):
+            url_value = urllib.parse.urljoin(f"{SITE_URL}/", url_value.lstrip("./"))
+        if "my_sms" not in url_value:
+            return
+        key = (url_value, method)
+        if key in seen:
+            return
+        seen.add(key)
+        discovered.append(key)
+
+    defaults = [
+        (f"{SITE_URL}/portal/live/my_sms/get", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/get", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/data", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/data", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/list", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/list", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/table", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/table", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/fetch", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/fetch", "get"),
+    ]
+    for url_value, method in defaults:
+        _push(url_value, method)
+
+    html = str(page_html or "")
+    if not html:
+        return discovered
+
+    url_patterns = [
+        r"[\"']((?:https?:)?//[^\"']*my_sms[^\"']*)[\"']",
+        r"[\"'](/[^\"']*my_sms[^\"']*)[\"']",
+        r"(?:ajax|url|source|data-url|data-source)\\s*[:=]\\s*[\"']([^\"']*my_sms[^\"']*)[\"']",
+    ]
+    method_hints = re.findall(r"(?:type|method)\\s*[:=]\\s*[\"'](post|get)[\"']", html, flags=re.IGNORECASE)
+    preferred_method = str(method_hints[0]).lower() if method_hints else "post"
+    for pattern in url_patterns:
+        for match in re.findall(pattern, html, flags=re.IGNORECASE):
+            _push(match, preferred_method)
+            _push(match, "get")
+            _push(match, "post")
+    return discovered
+
+
+def _probe_site_connection_status() -> str:
+    try:
+        session = _build_site_session()
+    except Exception as probe_err:
+        return f"❌ {probe_err}"
+
+    has_cookie = _site_session_has_auth_cookie(session)
+    last_status = "❌ تعذر الوصول"
+    for label, url in [
+        ("my_sms", f"{SITE_URL}/portal/live/my_sms"),
+        ("portal", f"{SITE_URL}/portal"),
+        ("homepage", SITE_URL),
+    ]:
+        try:
+            resp = session.get(url, timeout=18, allow_redirects=True)
+        except Exception as page_err:
+            last_status = f"❌ {page_err}"
+            continue
+        if _is_authenticated_response(resp):
+            return f"✅ {label} ({resp.status_code})"
+        if _is_cloudflare_response(resp):
+            last_status = f"⚠️ Cloudflare ({resp.status_code})"
+        else:
+            last_status = f"⚠️ {resp.status_code}"
+
+    if has_cookie and last_status.startswith("⚠️ Cloudflare"):
+        return "⚠️ الجلسة محمّلة لكن Cloudflare منع الفحص المباشر"
+    return last_status
+
+
+def _whatsapp_connection_label(number: str, apikey: str) -> str:
+    has_number = bool(str(number or "").strip())
+    has_key = bool(str(apikey or "").strip())
+    if has_number and has_key:
+        return "✅"
+    if has_number and not has_key:
+        return "⚠️ الرقم موجود والمفتاح ناقص"
+    if has_key and not has_number:
+        return "⚠️ المفتاح موجود والرقم ناقص"
+    return "➖ غير مُفعّل"
 
 def _login_site_with_credentials(session: requests.Session) -> bool:
     """محاولة تسجيل الدخول بالبريد/كلمة المرور وتحديث الكوكيز تلقائياً."""
@@ -2724,22 +2910,20 @@ def download_logs(message):
         bot.reply_to(message, "📭 ملف اللوج فارغ أو غير موجود.")
 
 def check_connection(message):
-    try:
-        r = requests.get(SITE_URL, timeout=8)
-        site_ok = f"✅ {r.status_code}"
-    except Exception as e:
-        site_ok = f"❌ {e}"
+    site_ok = _probe_site_connection_status()
     try:
         me = bot.get_me()
         tg_ok = f"✅ @{me.username}"
     except Exception as e:
         tg_ok = f"❌ {e}"
+    wa_primary = _whatsapp_connection_label(WA_NUMBER_1, WA_APIKEY_1)
+    wa_backup = _whatsapp_connection_label(WA_NUMBER_2, WA_APIKEY_2)
     text = (
         f"🔎 *فحص الاتصال:*\n"
         f"🌐 الموقع: {site_ok}\n"
         f"🤖 تيليجرام: {tg_ok}\n"
-        f"📟 واتساب أساسي: {'✅' if WA_NUMBER_1 else '⚠️ غير مهيأ'}\n"
-        f"📟 واتساب احتياطي: {'✅' if WA_NUMBER_2 else '⚠️ غير مهيأ'}"
+        f"📟 واتساب أساسي: {wa_primary}\n"
+        f"📟 واتساب احتياطي: {wa_backup}"
     )
     bot.reply_to(message, text, parse_mode="Markdown")
 
@@ -4849,36 +5033,26 @@ def delete_platform_command(message):
 EMBEDDED_SITE_COOKIES = [
     {
         "name": "ivas_sms_session",
-        "value": "eyJpdiI6InpselpOOHhuaWRVVG5xNm1iMWc2Y2c9PSIsInZhbHVlIjoib29sWm83VUcxbjRrL29ucXd5YVlINklNT1NiLzU4WlhCSjNyZkZIcnFuaWZSektkQlJqSGhlTFBGOGJocVFGa1lscHJML1hwRlNuWStQYnczV2RLU3FIZmFSY1dUZDh6N2I5cWRuKzM0TXYyTWE2Q2xmeWMvMFhOamlpejBySFMiLCJtYWMiOiJhNjhmMmY1Y2ZkNWNiOTEzM2ZjZmMwOGI0YjcwYmNlNDQ0YmViODc1ZTgxZDA4YmYzNjkwMmE4N2RiMDBhOGY3IiwidGFnIjoiIn0%3D",
+        "value": "eyJpdiI6InIzRkw2UVNkdjcyK2Z5Mk1UVWhIUHc9PSIsInZhbHVlIjoiQlc3OERhWkUrYmUrbWlLNXR6QjBiMVdETWNxeC9lVzIvbHNQaVE2R2duOEJEY0VhSzhrSUM0cW1XMTJVR0VCMkJpM3dJTkhXNkwzaXkyckwwYXpvaUdrblBYMmtIYllReXVMY2JGZjlLTVNMa0l1WkxDZVp5YzZocUJrZmtER0EiLCJtYWMiOiJiYzI5NTA0MWY4Mjg0ZTY5MDU0NTZiMmQ2MDgxMGYyM2E3ZjVkNzliYTlmNDJlZjI5YWI1YzI3YjdlYTFmMGEzIiwidGFnIjoiIn0%3D",
         "domain": "www.ivasms.com",
         "path": "/",
-        "expires": 1776694653.951559,
+        "expires": 1779472200.636235,
         "httpOnly": True,
         "secure": False,
         "sameSite": "lax",
-        "origin": "https://www.ivasms.com"
+        "origin": "https://www.ivasms.com",
     },
     {
         "name": "XSRF-TOKEN",
-        "value": "eyJpdiI6IlpEWnlpd2VUaHlaMUhIRzlxRUNFZ3c9PSIsInZhbHVlIjoiWnpHS21DTTFMYjNQRHVySnAzakRmZUN5eWpCL2FPcEE2LytEeWtadFQrZ3MwK0hBeFczcGlCQ0dueUdLZnRRVmRvb0FpZ0ltNGlYUzBDQzVFOHFKdkpDMnd4eWlUcCtSOThBYXFkUGtSTmJuU0ZxYUxqNHJidi9jd0tuN0p4cjEiLCJtYWMiOiJiNjUwZDU5ZmJkOTEyNGE4YmQ4YTBjNzgxNTBlNzY1NWFkYmVkZGJiNjg5NmQwY2I1NmRmMDg1OWI2ZjE2ZjFhIiwidGFnIjoiIn0%3D",
-        "domain": ".www.ivasms.com",
-        "path": "/",
-        "httpOnly": False,
-        "secure": False,
-        "sameSite": "unspecified",
-        "origin": "https://www.ivasms.com"
-    },
-    {
-        "name": "XSRF-TOKEN",
-        "value": "eyJpdiI6IlBYOWFnK0o3VUs2ZFFpZ1FQQ0VxOUE9PSIsInZhbHVlIjoidjJIa1VvV2Vkbi91cXB1ZjFCU0xvbzkyejB0YWJkaGhVOXRPZkVjanJ2alhtYUJqZTRyRXFoLzZFeThOTkljOTU3U1drK3BSWUpBVVByWVFYTStvVDNJYjF0SDBrWmtrSXQ3NmtmMnpHcWpEUlgzczdIaHpJVlpaU1pmdzlQRWkiLCJtYWMiOiJmMDE0MDJmMmUxNzQzNDY3N2M3NTQyMWIwYzRjZWFlZTAzMjQ0MTZkNGRiYzM0MzA2MTI2MTEzODM1MmIzY2Y2IiwidGFnIjoiIn0%3D",
+        "value": "eyJpdiI6IlgyQzhvWWlZa3h3ckRaMDljY3hlZ1E9PSIsInZhbHVlIjoiUDBLVEVlK3JjRnFMbU5nVTBaZEQ3UXpXUWJiMVRZbEtnVHk3WkN6Mmx2VDAzOXNxQXlFWjFIMjdBWk9CeENyMk1LNUQ1enNMTzlHaW1JQjhDNlNnWk40dUJSVWt4UXpUTE5YZk1rZFMyQjVIdllxUnNvVnY0aGtGNFdhblhvc3QiLCJtYWMiOiI1Y2ViMWM4OWJlNzI3MGNjNGY0MGM5NGI5NGU3ODM0NjU2ZGY5Y2QzMzNhNWFkNmVkM2JjZjNkOTc1YjM2OGY0IiwidGFnIjoiIn0%3D",
         "domain": "www.ivasms.com",
         "path": "/",
-        "expires": 1776694653.951353,
+        "expires": 1779472200.636071,
         "httpOnly": False,
         "secure": False,
         "sameSite": "lax",
-        "origin": "https://www.ivasms.com"
-    }
+        "origin": "https://www.ivasms.com",
+    },
 ]
 
 # مهم: لا تمسح قيم الكوكيز هنا. البوت يعتمد على SITE_COOKIE / SITE_COOKIE_FILE
@@ -6083,25 +6257,20 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
     session = session or _build_site_session()
     page_resp = session.get(SITE_ADD_SOURCE_PAGE, timeout=30, allow_redirects=True)
     if not _is_authenticated_response(page_resp):
-        raise RuntimeError('تعذر فتح صفحة my_sms. تأكد من الكوكيز أو تسجيل الدخول.')
+        status_code = getattr(page_resp, 'status_code', 'unknown')
+        if _is_cloudflare_response(page_resp):
+            raise RuntimeError('تعذر فتح صفحة my_sms بسبب Cloudflare. أضف cf_clearance لو متاح أو حدّث الـ runtime cookies.')
+        raise RuntimeError(f'تعذر فتح صفحة my_sms. الحالة الحالية: {status_code}')
 
     collected: List[Dict] = []
     page_html = getattr(page_resp, 'text', '') or ''
     csrf = _extract_csrf_token(page_html)
     page_rows = _extract_live_my_sms_rows_from_html(page_html)
 
-    ajax_candidates = [
-        (f'{SITE_URL}/portal/live/my_sms/get', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/get', 'get'),
-        (f'{SITE_URL}/portal/live/my_sms/data', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/data', 'get'),
-        (f'{SITE_URL}/portal/live/my_sms/list', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/list', 'get'),
-        (f'{SITE_URL}/portal/live/my_sms/table', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/table', 'get'),
-    ]
+    ajax_candidates = _extract_live_my_sms_ajax_endpoints(page_html)
     headers = {
         'Referer': SITE_ADD_SOURCE_PAGE,
+        'Origin': SITE_URL,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json, text/plain, text/html, */*',
     }
@@ -6112,13 +6281,17 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
     payload_variants = []
     base_payload = {'_token': csrf} if csrf else {}
     payload_variants.append(base_payload)
-    datatable_payload = {
+    payload_variants.append({k: v for k, v in {
         '_token': csrf,
         'draw': '1',
         'start': '0',
         'length': str(page_size),
-    }
-    payload_variants.append({k: v for k, v in datatable_payload.items() if v})
+        'limit': str(page_size),
+        'page': '1',
+        'per_page': str(page_size),
+        'rows': str(page_size),
+    }.items() if v})
+    payload_variants.append({k: v for k, v in _portal_numbers_datatable_params(page_size, start=0, draw=1).items() if v})
 
     for endpoint, method in ajax_candidates:
         for payload in payload_variants:
@@ -7606,20 +7779,28 @@ def _platform_label_loose(value: str) -> str:
 
 
 def _load_site_cookies(session: requests.Session) -> bool:
-    """أولوية تحميل الكوكيز: runtime → ملف JSON مخصص → SITE_COOKIE → المضمّنة."""
+    """يحمّل كوكيز الموقع بترتيب مرن: المدمجة أولاً ثم runtime ثم الملفات المخصصة ثم SITE_COOKIE."""
+    loaded_any = False
+
+    if _load_cookie_items(session, EMBEDDED_SITE_COOKIES, "الكوكيز الجديدة المدمجة داخل الملف"):
+        loaded_any = True
+
     if _load_runtime_cookies(session):
-        return True
+        loaded_any = True
+
     if _load_cookies_from_json_file(session):
-        return True
+        loaded_any = True
 
     raw_cookie = str(SITE_COOKIE or "").strip()
     if raw_cookie:
         _apply_site_cookie(session, raw_cookie)
         if _pick_cookie_value(session, "ivas_sms_session", "laravel_session", "session", "SESSION", "site_session"):
             logger.info("🍪 تم تحميل كوكي الجلسة من SITE_COOKIE")
-            return True
+            loaded_any = True
 
-    return _load_cookie_items(session, EMBEDDED_SITE_COOKIES, "الكوكيز الجديدة المدمجة داخل الملف")
+    if loaded_any:
+        _refresh_site_security_headers(session)
+    return loaded_any
 
 def _normalize_number(value: str) -> str:
     """تنسيق الرقم بشكل موحّد، وتحويل 00 إلى +، وإضافة + تلقائياً للأرقام الدولية."""
@@ -9023,6 +9204,15 @@ def _legacy_fetch_numbers_smart(notify_users: bool = True) -> Tuple[bool, int]:
         "Accept":       "application/json",
         "Content-Type": "application/json",
     }
+
+    try:
+        live_my_sms_numbers = _fetch_numbers_from_live_my_sms(session)
+    except Exception as live_my_sms_err:
+        live_my_sms_numbers = []
+        logger.warning(f"Live my_sms fetch warning: {live_my_sms_err}")
+    if live_my_sms_numbers:
+        new_numbers.extend(live_my_sms_numbers)
+        logger.info(f"✅ my_sms: {len(live_my_sms_numbers)} رقم من صفحة live/my_sms")
 
     portal_numbers = _fetch_numbers_from_portal(session)
     if portal_numbers:
