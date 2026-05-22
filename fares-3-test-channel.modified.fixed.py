@@ -8,6 +8,9 @@
 ║  📢 القناة: @fz_z_Z                                          ║
 ╚══════════════════════════════════════════════════════════════╝
 """
+import requests
+
+from bs4 import BeautifulSoup
 
 import os
 
@@ -3494,8 +3497,8 @@ def _platform_exists(platform):
 
 pending_activation = {}
 
-AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", False)
-AUTO_CODE_WATCH_INTERVAL_SECONDS = max(10.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "15.0") or "15.0").strip() or "15.0"))
+AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", True)
+AUTO_CODE_WATCH_INTERVAL_SECONDS = max(2.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "3.0") or "3.0").strip() or "3.0"))
 AUTO_CODE_WATCH_TTL_SECONDS = max(600, int(str(_get("AUTO_CODE_WATCH_TTL_SECONDS", "1800") or "1800").strip() or "1800"))
 _auto_code_watch_started = False
 _auto_code_watch_lock = threading.Lock()
@@ -3581,13 +3584,30 @@ def _auto_code_watch_loop():
                 continue
 
             fetched_results: Dict[Tuple[str, str], Optional[Dict[str, Any]]] = {}
-            for cache_key in grouped_watchers.keys():
-                number, platform = cache_key
-                try:
-                    fetched_results[cache_key] = _fetch_latest_sms_for_number(number, platform)
-                except Exception as fetch_err:
-                    fetched_results[cache_key] = None
-                    logger.debug(f"AUTO_CODE_WATCH fetch skipped for {number}: {fetch_err}")
+            watcher_jobs = list(grouped_watchers.keys())
+            max_workers = max(1, min(len(watcher_jobs), BOT_WORKER_THREADS, 6))
+            if max_workers <= 1:
+                for cache_key in watcher_jobs:
+                    number, platform = cache_key
+                    try:
+                        fetched_results[cache_key] = _fetch_latest_sms_for_number(number, platform)
+                    except Exception as fetch_err:
+                        fetched_results[cache_key] = None
+                        logger.debug(f"AUTO_CODE_WATCH fetch skipped for {number}: {fetch_err}")
+            else:
+                with ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix="autocodewatch") as executor:
+                    future_map = {
+                        executor.submit(_fetch_latest_sms_for_number, number, platform): (number, platform)
+                        for number, platform in watcher_jobs
+                    }
+                    for future in as_completed(future_map):
+                        number, platform = future_map[future]
+                        cache_key = (number, platform)
+                        try:
+                            fetched_results[cache_key] = future.result()
+                        except Exception as fetch_err:
+                            fetched_results[cache_key] = None
+                            logger.debug(f"AUTO_CODE_WATCH fetch skipped for {number}: {fetch_err}")
 
             for cache_key, watch_group in grouped_watchers.items():
                 number, platform = cache_key
@@ -3783,7 +3803,7 @@ def live_codes_loop():
     sent = set()
     while True:
         try:
-            codes = fetch_live_test_codes()
+            codes = fetch_live_test_codes(force_refresh=True)
 
             for item in codes:
                 key = item["code"] + item["number"]
@@ -5226,8 +5246,8 @@ def _build_general_number_row(item: Dict) -> Dict:
     return row
 
 _live_test_codes_monitor_started = False
-LIVE_TEST_CODES_MONITOR_ENABLED = _env_flag("LIVE_TEST_CODES_MONITOR_ENABLED", False)
-LIVE_TEST_CODES_POLL_INTERVAL_SECONDS = max(10, int(str(_get("LIVE_TEST_CODES_POLL_INTERVAL_SECONDS", "20") or "20").strip() or "20"))
+LIVE_TEST_CODES_MONITOR_ENABLED = _env_flag("LIVE_TEST_CODES_MONITOR_ENABLED", True)
+LIVE_TEST_CODES_POLL_INTERVAL_SECONDS = max(2, int(str(_get("LIVE_TEST_CODES_POLL_INTERVAL_SECONDS", "3") or "3").strip() or "3"))
 
 _live_test_codes_seen = set()
 
@@ -8793,7 +8813,7 @@ def _legacy_fetch_numbers_smart(notify_users: bool = True) -> Tuple[bool, int]:
     log_event("NUMBERS_FETCH_EMPTY", {"before": len(before_items)})
     return False, 0
 
-LIVE_TEST_CODES_CACHE_TTL_SECONDS = max(2.0, float(str(_get("LIVE_TEST_CODES_CACHE_TTL_SECONDS", "5") or "5").strip() or "5"))
+LIVE_TEST_CODES_CACHE_TTL_SECONDS = max(0.5, float(str(_get("LIVE_TEST_CODES_CACHE_TTL_SECONDS", "1.0") or "1.0").strip() or "1.0"))
 _live_test_codes_cache = {"ts": 0.0, "items": []}
 
 def fetch_live_test_codes(force_refresh: bool = False):
