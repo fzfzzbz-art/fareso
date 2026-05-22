@@ -94,24 +94,24 @@ _DEFAULTS = {
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
 
     # روابط الموقع الحالية (Basha IPRN VAS)
-    "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
-    "HOME_URL": os.environ.get("HOME_URL", "https://basha.cc/home"),
-    "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
-    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
-    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
-    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers"),
-    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
-    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
-    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
-    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
-    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
-    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
-    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/telegram-setup"),
+    "SITE_URL": os.environ.get("SITE_URL", "https://www.ivasms.com/login"),
+    "HOME_URL": os.environ.get("HOME_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "RANGES_URL": os.environ.get("RANGES_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://www.ivasms.com/portal/live/my_sms/data"),
+    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://www.ivasms.com/portal/live/my_sms/data"),
+    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://www.ivasms.com/portal/live/my_sms"),
+    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://www.ivasms.com/portal/live/my_sms/data"),
+    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://www.ivasms.com/portal/live/my_sms"),
     "SITE_TELEGRAM_CHAT_ID": os.environ.get("SITE_TELEGRAM_CHAT_ID", os.environ.get("ADMIN_ID", "")),
 
     # بيانات الحساب (تُقرأ من البيئة)
-    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
-    "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
+    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "fareesaltmimii57@gmail.com"),
+    "SITE_PASS": os.environ.get("SITE_PASS", "Vr9bxG7R!mjrRZ"),
     "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
 
     # الكوكيز والتمويه
@@ -120,36 +120,6 @@ _DEFAULTS = {
     "SITE_COOKIE_FILE": "runtime_cookies.json"
 }
 
-EMBEDDED_SITE_COOKIES = [
-    {
-        "domain": "www.ivasms.com",
-        "expirationDate": 1776031741.312787,
-        "hostOnly": True,
-        "httpOnly": False,
-        "name": "XSRF-TOKEN",
-        "path": "/",
-        "sameSite": "lax",
-        "secure": False,
-        "session": False,
-        "storeId": "0",
-        "value": "eyJpdiI6IkdvYW1LWmh2ZVBKMVVUSkZ6RE1qTnc9PSIsInZhbHVlIjoiZ2pkeDduSFdMZlVhVVZxWktySHEyeFpDZHNaajRrZUxNS3k0MUlGbmJjbWdmQ0tMY1JVeHBtL0FNUGcvM3NaellKS3FUQlRWNCs2WEgybzNrSWxHMys4VmM2UW5vRlpDNEtLNGh3VVk0Tm55Y283NGxpUHZvMU9jQUVPTzhwb08iLCJtYWMiOiI0YjY3Y2RkZDg4YmVkM2ExNjY0NDhlNmM4YjQxMGNkMDg2ZjI2ODZhYTQzYmUxZTNlNzZjOTY2MWM2M2M3YzFiIiwidGFnIjoiIn0=",
-        "origin": "https://www.ivasms.com",
-    },
-    {
-        "domain": "www.ivasms.com",
-        "expirationDate": 1776031741.312871,
-        "hostOnly": True,
-        "httpOnly": True,
-        "name": "ivas_sms_session",
-        "path": "/",
-        "sameSite": "lax",
-        "secure": False,
-        "session": False,
-        "storeId": "0",
-        "value": "eyJpdiI6Ikk2OEEyV3laRUI1cXFUSGp1VGZKaHc9PSIsInZhbHVlIjoiRFdoeVN2VUNCeHJoaGRwa28vWEw1dUkxK0VjYUZTWmxkcHAraVhVM3BPMjdpaGF2WFA1a1hJeDBaU1FjRW1maEhYOEdtRDhlekp1cFUyTStaVzZrT0tjZUNSc0ZSVmJ1aFRseS9RRW55cUY5SWdlN0VlM1FSdjBicW14RFkyUmQiLCJtYWMiOiJhZTUwZmUyZmY4YjRhYmY0YjFkMjU3NTk5NmVkYmFmYTg0MDc2ZmYyNjY1YjI0MWQ2OGI1ODI2NDVkMTM3NTc2IiwidGFnIjoiIn0%3D",
-        "origin": "https://www.ivasms.com",
-    },
-]
 
 def _get(key: str, fallback: str = "") -> str:
     """يقرأ المتغير من البيئة أولاً، وإن لم يجده يرجع القيمة المدمجة."""
