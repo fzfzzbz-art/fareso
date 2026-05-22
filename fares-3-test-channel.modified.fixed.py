@@ -130,6 +130,10 @@ except ImportError:
 
 try:
     from telebot import TeleBot, types
+    try:
+        from telebot.apihelper import ApiTelegramException
+    except Exception:
+        ApiTelegramException = Exception
 except ImportError as exc:
     raise RuntimeError(
         "Missing dependency: pyTelegramBotAPI. Install it with: pip install pyTelegramBotAPI"
@@ -2137,6 +2141,33 @@ if not ADMIN_ID:
     logger.warning("ADMIN_ID is not set. Admin-only commands will not work correctly until you set ADMIN_ID.")
 
 bot        = TeleBot(BOT_TOKEN, threaded=True, num_threads=BOT_WORKER_THREADS)
+
+_original_answer_callback_query = bot.answer_callback_query
+
+def _is_stale_callback_query_error(exc: Exception) -> bool:
+    err_text = str(exc or "").strip().lower()
+    stale_markers = (
+        "query is too old",
+        "response timeout expired",
+        "query id is invalid",
+        "invalid query id",
+        "query_id_invalid",
+    )
+    return any(marker in err_text for marker in stale_markers)
+
+def _safe_answer_callback_query(*args, **kwargs):
+    try:
+        return _original_answer_callback_query(*args, **kwargs)
+    except Exception as callback_err:
+        if _is_stale_callback_query_error(callback_err):
+            try:
+                logger.info(f"ℹ️ تم تجاهل callback منتهي/قديم بدون تعطيل البوت: {callback_err}")
+            except Exception:
+                pass
+            return None
+        raise
+
+bot.answer_callback_query = _safe_answer_callback_query
 
 bot_active = True   # مفتاح تشغيل/إيقاف الاستجابة
 
@@ -9099,6 +9130,7 @@ AUTO_SYNC_INTERVAL_MINUTES = max(1, int(_get("AUTO_SYNC_INTERVAL_MINUTES", "3") 
 def _start_background_services() -> None:
     background_tasks = [
         ('general bootstrap', _bootstrap_general_bucket_once),
+        ('auto code watch', _start_auto_code_watch_loop_once),
     ]
     if _HOSTING_HTTP_ENABLED:
         background_tasks.insert(0, ('HTTP server', _start_hosting_http_server_once))
@@ -9108,11 +9140,10 @@ def _start_background_services() -> None:
         background_tasks.extend([
             ('test mode publisher', _start_test_mode_publisher_once),
             ('live monitor', _start_live_test_codes_monitor_once),
-            ('auto code watch', _start_auto_code_watch_loop_once),
             ('auto channel post', _start_auto_channel_post_loop_once),
         ])
     else:
-        logger.info('🛡️ Hosting safe mode enabled: optional background services are disabled to protect the website/server resources.')
+        logger.info('🛡️ Hosting safe mode enabled: optional background services are disabled to protect the website/server resources مع إبقاء مراقبة الأكواد الخاصة شغالة.')
     for label, starter in background_tasks:
         try:
             starter()
