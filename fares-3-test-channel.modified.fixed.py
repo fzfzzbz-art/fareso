@@ -156,7 +156,7 @@ _DEFAULTS = {
     "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
     "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
     "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
-    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/my/messages"),
+    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/telegram-setup"),
     "SITE_TELEGRAM_CHAT_ID": os.environ.get("SITE_TELEGRAM_CHAT_ID", os.environ.get("ADMIN_ID", "")),
 
     # بيانات الحساب (تُقرأ من البيئة)
@@ -304,6 +304,12 @@ RUNTIME_COOKIES_FILE = DATA_DIR / "runtime_cookies.json"
 NUMBERS_SQLITE_FILE = DATA_DIR / "numbers.sqlite3"
 
 SYNC_REPORT_FILE = DATA_DIR / "sync_report.json"
+
+USER_REQUESTS_DB_FILE = DATA_DIR / "bot_data.db"
+
+BASHA_SOURCE_CHAT_ID = int(_get("BASHA_SOURCE_CHAT_ID", "0") or "0")
+
+BASHA_SOURCE_USERNAME = _get("BASHA_SOURCE_USERNAME", "").strip().lstrip("@").lower()
 
 NUMBERS_SYNC_SOURCE = _get("NUMBERS_SYNC_SOURCE", "site").strip().lower() or "site"
 
@@ -3945,6 +3951,176 @@ def cleanup_pending():
 
     for num in to_delete:
         pending_activation.pop(num, None)
+
+_user_requests_lock = threading.RLock()
+
+def _user_requests_connect() -> sqlite3.Connection:
+    USER_REQUESTS_DB_FILE.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(USER_REQUESTS_DB_FILE, timeout=30, check_same_thread=False)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
+    return conn
+
+
+def _init_user_requests_db() -> None:
+    with _user_requests_lock:
+        conn = _user_requests_connect()
+        try:
+            conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS user_requests (
+                    phone TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL,
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                )
+                """
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def save_request(phone: str, user_id: int) -> None:
+    normalized_phone = _normalize_number(str(phone or '').strip())
+    if not normalized_phone:
+        raise ValueError('invalid phone')
+    _init_user_requests_db()
+    with _user_requests_lock:
+        conn = _user_requests_connect()
+        try:
+            conn.execute(
+                "INSERT OR REPLACE INTO user_requests (phone, user_id, created_at) VALUES (?, ?, CURRENT_TIMESTAMP)",
+                (normalized_phone, int(user_id)),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def get_user_by_phone(phone: str) -> Optional[int]:
+    normalized_phone = _normalize_number(str(phone or '').strip())
+    if not normalized_phone:
+        return None
+    _init_user_requests_db()
+    with _user_requests_lock:
+        conn = _user_requests_connect()
+        try:
+            row = conn.execute(
+                "SELECT user_id FROM user_requests WHERE phone = ?",
+                (normalized_phone,),
+            ).fetchone()
+        finally:
+            conn.close()
+    if not row:
+        return None
+    return int(row[0] if not isinstance(row, sqlite3.Row) else row['user_id'])
+
+
+def extract_phone(text: str) -> str:
+    text_value = str(text or '').strip()
+    if not text_value:
+        return ''
+    label_patterns = [
+        r'(?i)(?:رقم|number|phone|mobile)\s*[:：|\-]\s*([+0-9][0-9\s().\-]{5,25})',
+    ]
+    for pattern in label_patterns:
+        match = re.search(pattern, text_value)
+        if match:
+            candidate = _normalize_number(match.group(1))
+            if candidate:
+                return candidate
+    candidates = _extract_phone_candidates_from_text(text_value)
+    return candidates[0] if candidates else ''
+
+
+def extract_code(text: str) -> str:
+    text_value = str(text or '').strip()
+    if not text_value:
+        return ''
+    match = re.search(
+        r'(?i)(?:كود|code|otp|pin|رمز)\s*[:：|\-]\s*([0-9]{4,8})',
+        text_value,
+    )
+    if match:
+        return str(match.group(1) or '').strip()
+    return _extract_code_from_text(text_value)
+
+
+def _message_matches_basha_format(text: str) -> bool:
+    text_value = str(text or '').strip()
+    return bool(text_value and extract_phone(text_value) and extract_code(text_value))
+
+
+def _message_is_from_basha_source(message) -> bool:
+    expected_chat_id = BASHA_SOURCE_CHAT_ID
+    expected_username = BASHA_SOURCE_USERNAME
+
+    chat_id = int(getattr(getattr(message, 'chat', None), 'id', 0) or 0)
+    chat_username = str(getattr(getattr(message, 'chat', None), 'username', '') or '').strip().lstrip('@').lower()
+    from_username = str(getattr(getattr(message, 'from_user', None), 'username', '') or '').strip().lstrip('@').lower()
+
+    if expected_chat_id and chat_id == expected_chat_id:
+        return True
+    if expected_username and expected_username in {chat_username, from_username}:
+        return True
+    if expected_chat_id or expected_username:
+        return False
+    return True
+
+
+def handle_basha_messages(message) -> bool:
+    text_value = str(getattr(message, 'text', '') or '').strip()
+    if not _message_matches_basha_format(text_value):
+        return False
+    if not _message_is_from_basha_source(message):
+        return False
+
+    phone = extract_phone(text_value)
+    code = extract_code(text_value)
+    if not phone or not code:
+        return False
+
+    target_user = get_user_by_phone(phone)
+    delivered = False
+
+    if target_user:
+        try:
+            bot.send_message(target_user, f'✅ تم استلام الكود الخاص بك:\n{code}')
+            delivered = True
+        except Exception as send_err:
+            logger.warning(f'تعذر إرسال الكود للمستخدم {target_user}: {send_err}')
+
+    try:
+        delivery_label = 'تم توصيله لصاحبه' if delivered else 'ولم يتم العثور على صاحب الرقم'
+        bot.send_message(
+            CHANNEL_ID,
+            f'🔔 كود جديد {delivery_label}!\nرقم: {phone}\nكود: {code}',
+        )
+    except Exception as channel_err:
+        logger.warning(f'تعذر إرسال نسخة التوثيق للقناة: {channel_err}')
+
+    logger.info(f'Basha code handled | phone={phone} | delivered={delivered}')
+    return True
+
+
+def get_number_command(message):
+    parts = str(getattr(message, 'text', '') or '').split(maxsplit=1)
+    if len(parts) < 2:
+        bot.reply_to(message, '❌ استخدم الأمر بالشكل التالي:\n/get_number 123456')
+        return
+
+    phone = extract_phone(parts[1]) or _normalize_number(parts[1])
+    if not phone:
+        bot.reply_to(message, '❌ الرقم غير صالح. أرسل الرقم مباشرة بعد الأمر.')
+        return
+
+    try:
+        save_request(phone, message.chat.id)
+        bot.reply_to(message, '✅ تم حفظ طلبك، سيصلك الكود هنا بمجرد وصوله.')
+    except Exception as req_err:
+        logger.warning(f'تعذر حفظ طلب الرقم {phone}: {req_err}')
+        bot.reply_to(message, '⚠️ حصل خطأ أثناء حفظ الطلب، جرّب مرة تانية بعد قليل.')
+
 
 CHANNEL_USERNAME = "@fz_z_Z"
 
@@ -8355,6 +8531,9 @@ def _dispatch_text_message(message):
     if not text:
         return
 
+    if handle_basha_messages(message):
+        return
+
     command = text.split()[0].split("@", 1)[0].lower()
     command_map = {
         "/start": cmd_start,
@@ -8372,6 +8551,7 @@ def _dispatch_text_message(message):
         "/sitecodes": sitecodes_command,
         "/dbaudit": db_audit_command,
         "/confirm": confirm_number,
+        "/get_number": get_number_command,
         "/deleteplatform": delete_platform_command,
         "/delplatform": delete_platform_command,
     }
@@ -8503,6 +8683,7 @@ def _register_visible_bot_commands():
             types.BotCommand("clearcookies", "حذف كل runtime cookies"),
             types.BotCommand("dbaudit", "تدقيق قاعدة الأرقام"),
             types.BotCommand("confirm", "تأكيد حذف رقم من الانتظار"),
+            types.BotCommand("get_number", "حفظ رقم وانتظار الكود الخاص به"),
             types.BotCommand("deleteplatform", "حذف كل أرقام منصة"),
             types.BotCommand("delplatform", "اختصار deleteplatform"),
         ]
