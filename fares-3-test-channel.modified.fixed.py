@@ -5817,39 +5817,96 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
     if page_resp.status_code != 200 or "/login" in final_url.lower() or _looks_like_guest_page(page_text):
         raise RuntimeError("الجلسة غير مسجلة دخول أو انتهت صلاحيتها. سجّل الدخول للموقع من لوحة المطور أولاً.")
 
-    payload = None
+    csrf = _extract_csrf_token(page_text)
     lengths = []
     for candidate in (int(length or 1000), 1000, 500, 250, 100):
         if candidate > 0 and candidate not in lengths:
             lengths.append(candidate)
 
-    last_error: Optional[Exception] = None
+    payload_variants: List[Dict[str, Any]] = []
     for current_length in lengths:
+        direct_payload = {"draw": 1, "start": 0, "length": current_length}
+        if direct_payload not in payload_variants:
+            payload_variants.append(direct_payload)
         try:
-            resp = session.get(
-                data_url,
-                params={"draw": 1, "start": 0, "length": current_length},
-                headers=_site_ajax_headers(page_url),
-                timeout=25,
-                allow_redirects=True,
-            )
-            resp.raise_for_status()
-            payload = resp.json()
-            if isinstance(payload, dict) and isinstance(payload.get("data"), list):
-                return payload
-        except Exception as fetch_err:
-            last_error = fetch_err
-            continue
+            rich_payload = {k: v for k, v in _portal_numbers_datatable_params(current_length, start=0, draw=1).items() if v not in (None, "")}
+        except Exception:
+            rich_payload = direct_payload
+        if rich_payload not in payload_variants:
+            payload_variants.append(rich_payload)
+
+    last_error: Optional[Exception] = None
+    for payload in payload_variants:
+        for method in ("get", "post"):
+            headers = _site_ajax_headers(page_url)
+            headers["Origin"] = SITE_URL
+            if csrf:
+                headers["X-CSRF-TOKEN"] = csrf
+                headers["X-XSRF-TOKEN"] = csrf
+            try:
+                if method == "post":
+                    resp = session.post(
+                        data_url,
+                        data=payload,
+                        headers=headers,
+                        timeout=25,
+                        allow_redirects=True,
+                    )
+                else:
+                    resp = session.get(
+                        data_url,
+                        params=payload,
+                        headers=headers,
+                        timeout=25,
+                        allow_redirects=True,
+                    )
+                resp.raise_for_status()
+                payload_json = resp.json()
+                if isinstance(payload_json, dict) and isinstance(payload_json.get("data"), list):
+                    return payload_json
+            except Exception as fetch_err:
+                last_error = fetch_err
+                continue
 
     raise RuntimeError(f"تعذر جلب بيانات الصفحة: {last_error or 'استجابة غير متوقعة'}")
 
 
 def _extract_links_from_html(value: Any) -> List[str]:
     found: List[str] = []
-    for match in re.findall(r'href=["\']([^"\']+)["\']', str(value or ""), flags=re.IGNORECASE):
-        candidate = html.unescape(str(match or "").strip())
-        if candidate and candidate not in found:
-            found.append(candidate)
+    seen = set()
+    raw_html = str(value or "")
+    if not raw_html:
+        return found
+
+    def _push(candidate: str) -> None:
+        link = html.unescape(str(candidate or "").strip())
+        if not link:
+            return
+        lowered = link.lower()
+        if lowered.startswith(("javascript:", "mailto:", "#")):
+            return
+        if link.startswith("//"):
+            link = f"https:{link}"
+        elif link.startswith("/"):
+            link = urllib.parse.urljoin(SITE_URL, link)
+        elif not link.startswith("http"):
+            link = urllib.parse.urljoin(f"{SITE_URL}/", link.lstrip("./"))
+        if link in seen:
+            return
+        seen.add(link)
+        found.append(link)
+
+    patterns = [
+        r'href=["\']([^"\']+)["\']',
+        r'action=["\']([^"\']+)["\']',
+        r'(?:window\.open|window\.location(?:\.href)?|location(?:\.href)?|open|download|revoke)\s*\(?\s*["\']([^"\']+)["\']',
+        r'["\']((?:https?:)?//[^"\']*(?:my/|portal/|download|revoke)[^"\']*)["\']',
+        r'["\'](/[^"\']*(?:my/|portal/|download|revoke)[^"\']*)["\']',
+    ]
+    for pattern in patterns:
+        for match in re.findall(pattern, raw_html, flags=re.IGNORECASE):
+            candidate = match if isinstance(match, str) else next((part for part in match if part), "")
+            _push(candidate)
     return found
 
 
@@ -5894,10 +5951,10 @@ def _extract_display_code_from_text(raw_text: str) -> str:
     return ""
 
 
-def _fetch_site_ranges_snapshot() -> Dict[str, Any]:
+def _fetch_site_ranges_snapshot(session: Optional[requests.Session] = None) -> Dict[str, Any]:
     page_url = _get("RANGES_URL", f"{SITE_URL}/my/ranges")
     data_url = _get("MY_RANGES_DATA_URL", f"{SITE_URL}/my/ranges/data")
-    payload = _site_datatable_json(_build_site_session(), page_url, data_url, length=500)
+    payload = _site_datatable_json(session or _build_site_session(), page_url, data_url, length=500)
     rows: List[Dict[str, Any]] = []
     for raw_row in payload.get("data", []) or []:
         if not isinstance(raw_row, (list, tuple)):
@@ -5921,6 +5978,141 @@ def _fetch_site_ranges_snapshot() -> Dict[str, Any]:
         "records_total": int(payload.get("recordsTotal", len(rows)) or len(rows)),
         "rows": rows,
     }
+
+
+def _range_row_platform_guess(row: Dict[str, Any], extra_text: str = "") -> str:
+    return (
+        _guess_platform_from_payload(
+            row.get("range", ""),
+            row.get("package", ""),
+            row.get("amount", ""),
+            row.get("platform", ""),
+            extra_text,
+        )
+        or _normalize_platform(row.get("platform") or row.get("range") or GENERAL_PLATFORM_NAME)
+        or GENERAL_PLATFORM_NAME
+    )
+
+
+
+def _fetch_numbers_from_my_numbers_page(session: Optional[requests.Session] = None) -> List[Dict]:
+    session = session or _build_site_session()
+    page_url = _get("MY_NUMBERS_URL", f"{SITE_URL}/my/numbers")
+    data_url = _get("MY_NUMBERS_DATA_URL", f"{SITE_URL}/my/numbers")
+    payload = _site_datatable_json(session, page_url, data_url, length=1000)
+    rows: List[Dict] = []
+    seen = set()
+
+    for raw_row in payload.get("data", []) or []:
+        if isinstance(raw_row, dict):
+            cells = list(raw_row.values())
+        elif isinstance(raw_row, (list, tuple)):
+            cells = list(raw_row)
+        else:
+            cells = [raw_row]
+        combined_text = " | ".join(_strip_html_text(cell) for cell in cells if cell is not None)
+        guessed_platform = _guess_platform_from_payload(*[str(cell or "") for cell in cells[:8]]) or GENERAL_PLATFORM_NAME
+        for cell in cells:
+            for number in _extract_phone_candidates_from_text(str(cell or "")):
+                item = _enrich_number_item({
+                    "number": number,
+                    "platform": guessed_platform,
+                    "site_section": "my/numbers",
+                    "source": "my_numbers",
+                    "added_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                    "raw_platform": guessed_platform,
+                    "message": combined_text,
+                })
+                if not item:
+                    continue
+                key = (item.get("number", ""), str(item.get("platform", "")).lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                rows.append(item)
+    return rows
+
+
+
+def _fetch_numbers_from_site_ranges(session: Optional[requests.Session] = None) -> List[Dict]:
+    session = session or _build_site_session()
+    snapshot = _fetch_site_ranges_snapshot(session=session)
+    page_url = str(snapshot.get("page_url") or _get("RANGES_URL", f"{SITE_URL}/my/ranges"))
+    rows: List[Dict] = []
+    seen = set()
+
+    def _append_number(candidate: str, meta: Dict[str, Any], source_label: str, extra_text: str = "") -> None:
+        item = _enrich_number_item({
+            "number": candidate,
+            "platform": _range_row_platform_guess(meta, extra_text=extra_text),
+            "site_section": "my/ranges",
+            "source": source_label,
+            "added_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "range": str(meta.get("range") or "").strip(),
+            "package": str(meta.get("package") or "").strip(),
+            "amount": str(meta.get("amount") or "").strip(),
+            "download_url": str(meta.get("download_url") or "").strip(),
+            "raw_platform": str(meta.get("platform") or meta.get("range") or "").strip(),
+            "message": extra_text[:2000],
+        })
+        if not item:
+            return
+        key = (item.get("number", ""), str(item.get("platform", "")).lower())
+        if key in seen:
+            return
+        seen.add(key)
+        rows.append(item)
+
+    for range_row in snapshot.get("rows", []) or []:
+        meta = dict(range_row or {})
+        inline_blob = " | ".join([
+            str(meta.get("range") or ""),
+            str(meta.get("package") or ""),
+            str(meta.get("amount") or ""),
+            str(meta.get("download_url") or ""),
+        ])
+        for inline_number in _extract_phone_candidates_from_text(inline_blob):
+            _append_number(inline_number, meta, "my_ranges_inline", extra_text=inline_blob)
+
+        detail_urls = [url for url in [meta.get("download_url", ""), meta.get("revoke_url", "")] if str(url or "").strip()]
+        for detail_url in detail_urls:
+            detail_headers = _site_ajax_headers(page_url)
+            detail_headers["Accept"] = "text/html, text/plain, application/json, text/csv, */*"
+            try:
+                resp = session.get(detail_url, headers=detail_headers, timeout=30, allow_redirects=True)
+                if resp.status_code in {403, 405}:
+                    resp = session.post(detail_url, headers=detail_headers, timeout=30, allow_redirects=True)
+            except Exception:
+                continue
+            if resp.status_code != 200:
+                continue
+            body_text = getattr(resp, "text", "") or ""
+            content_type = str(resp.headers.get("content-type", "") or "").lower()
+
+            if "json" in content_type:
+                try:
+                    payload_json = resp.json()
+                except Exception:
+                    payload_json = None
+                if payload_json is not None:
+                    for json_row in _extract_live_my_sms_rows_from_payload(payload_json, source="my_ranges_json"):
+                        merged_meta = dict(meta)
+                        merged_meta.update(json_row)
+                        _append_number(json_row.get("number", ""), merged_meta, str(json_row.get("source") or "my_ranges_json"), extra_text=json.dumps(payload_json, ensure_ascii=False)[:2000])
+
+            if body_text:
+                for extracted_number in _extract_phone_candidates_from_text(body_text):
+                    _append_number(extracted_number, meta, "my_ranges_download", extra_text=body_text)
+                if "csv" in content_type or detail_url.lower().endswith((".csv", ".txt")):
+                    try:
+                        for csv_row in csv.reader(body_text.splitlines()):
+                            for cell in csv_row:
+                                for extracted_number in _extract_phone_candidates_from_text(cell):
+                                    _append_number(extracted_number, meta, "my_ranges_csv", extra_text=cell)
+                    except Exception:
+                        pass
+    return rows
+
 
 
 def _format_site_range_rows(rows: List[Dict[str, Any]]) -> str:
@@ -6030,11 +6222,16 @@ def dev_site_platforms_callback(call):
         return
     _site_add_set_view_meta(
         call.from_user.id,
-        entry_title='📂 فتح my/ranges',
-        preferred_source_label='my/ranges',
-        preferred_page_url=_get("RANGES_URL", f"{SITE_URL}/my/ranges"),
+        entry_title='📂 فتح صفحات الموقع',
+        preferred_source_label='my/ranges + my/numbers + my_sms + portal_numbers',
+        preferred_page_url=' | '.join([
+            _get("RANGES_URL", f"{SITE_URL}/my/ranges"),
+            _get("MY_NUMBERS_URL", f"{SITE_URL}/my/numbers"),
+            SITE_ADD_SOURCE_PAGE,
+            f"{SITE_URL}/portal/numbers",
+        ]),
     )
-    bot.answer_callback_query(call.id, "⏳ جاري فتح my/ranges وتجهيز الدول والمنصات...")
+    bot.answer_callback_query(call.id, "⏳ جاري فتح صفحات الموقع وتجهيز الدول والمنصات...")
     _launch_site_add_open_async(
         call.message.chat.id,
         call.from_user.id,
@@ -6056,9 +6253,14 @@ def siteplatforms_command(message):
         return
     _site_add_set_view_meta(
         message.from_user.id,
-        entry_title='📂 فتح my/ranges',
-        preferred_source_label='my/ranges',
-        preferred_page_url=_get("RANGES_URL", f"{SITE_URL}/my/ranges"),
+        entry_title='📂 فتح صفحات الموقع',
+        preferred_source_label='my/ranges + my/numbers + my_sms + portal_numbers',
+        preferred_page_url=' | '.join([
+            _get("RANGES_URL", f"{SITE_URL}/my/ranges"),
+            _get("MY_NUMBERS_URL", f"{SITE_URL}/my/numbers"),
+            SITE_ADD_SOURCE_PAGE,
+            f"{SITE_URL}/portal/numbers",
+        ]),
     )
     _launch_site_add_open_async(message.chat.id, message.from_user.id, refresh=True)
 
@@ -6842,6 +7044,8 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
 
     for attempt_index in range(attempts):
         quick_jobs = [
+            ('my_ranges', _get("RANGES_URL", f'{SITE_URL}/my/ranges'), lambda: _fetch_numbers_from_site_ranges(_build_site_session())),
+            ('my_numbers', _get("MY_NUMBERS_URL", f'{SITE_URL}/my/numbers'), lambda: _fetch_numbers_from_my_numbers_page(_build_site_session())),
             ('my_sms', SITE_ADD_SOURCE_PAGE, lambda: _fetch_numbers_from_live_my_sms(_build_site_session())),
             ('portal_numbers', f'{SITE_URL}/portal/numbers', lambda: _fetch_numbers_from_portal(_build_site_session())),
         ]
