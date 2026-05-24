@@ -5794,84 +5794,256 @@ def _collect_codes_from_window(session: requests.Session, csrf: str, start_date:
                     return rows
     return rows
 
-def _fetch_site_codes_snapshot() -> Dict:
-    session = _build_site_session()
-    page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20)
-    csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
-    if not csrf:
-        raise RuntimeError("تعذر استخراج CSRF token من صفحة الرسائل")
+def _site_ajax_headers(referer: str = "") -> Dict[str, str]:
+    headers = {
+        "Accept": "application/json, text/plain, */*",
+        "X-Requested-With": "XMLHttpRequest",
+    }
+    if referer:
+        headers["Referer"] = referer
+    return headers
 
-    today = datetime.date.today()
-    recent_start = today - datetime.timedelta(days=30)
-    old_start = today - datetime.timedelta(days=365)
-    old_end = today - datetime.timedelta(days=31)
 
-    recent_rows = _collect_codes_from_window(session, csrf, recent_start, today, "new", max_ranges=100, max_numbers_per_range=50, max_entries=1000)
-    old_rows = []
-    if old_start <= old_end:
-        old_rows = _collect_codes_from_window(session, csrf, old_start, old_end, "old", max_ranges=50, max_numbers_per_range=20, max_entries=500)
+def _site_datatable_json(session: requests.Session, page_url: str, data_url: str, length: int = 1000) -> Dict[str, Any]:
+    page_resp = session.get(page_url, timeout=20, allow_redirects=True)
+    page_text = getattr(page_resp, "text", "") or ""
+    final_url = str(getattr(page_resp, "url", "") or "")
+    if page_resp.status_code != 200 or "/login" in final_url.lower() or _looks_like_guest_page(page_text):
+        raise RuntimeError("الجلسة غير مسجلة دخول أو انتهت صلاحيتها. سجّل الدخول للموقع من لوحة المطور أولاً.")
 
+    payload = None
+    lengths = []
+    for candidate in (int(length or 1000), 1000, 500, 250, 100):
+        if candidate > 0 and candidate not in lengths:
+            lengths.append(candidate)
+
+    last_error: Optional[Exception] = None
+    for current_length in lengths:
+        try:
+            resp = session.get(
+                data_url,
+                params={"draw": 1, "start": 0, "length": current_length},
+                headers=_site_ajax_headers(page_url),
+                timeout=25,
+                allow_redirects=True,
+            )
+            resp.raise_for_status()
+            payload = resp.json()
+            if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+                return payload
+        except Exception as fetch_err:
+            last_error = fetch_err
+            continue
+
+    raise RuntimeError(f"تعذر جلب بيانات الصفحة: {last_error or 'استجابة غير متوقعة'}")
+
+
+def _extract_links_from_html(value: Any) -> List[str]:
+    found: List[str] = []
+    for match in re.findall(r'href=["\']([^"\']+)["\']', str(value or ""), flags=re.IGNORECASE):
+        candidate = html.unescape(str(match or "").strip())
+        if candidate and candidate not in found:
+            found.append(candidate)
+    return found
+
+
+def _format_site_timestamp(value: Any) -> str:
+    raw_value = str(value or "").strip()
+    if not raw_value:
+        return ""
+    try:
+        numeric = int(float(raw_value))
+        if numeric > 10**12:
+            dt_value = datetime.datetime.fromtimestamp(numeric / 1000)
+        elif numeric > 10**9:
+            dt_value = datetime.datetime.fromtimestamp(numeric)
+        else:
+            return raw_value
+        return dt_value.strftime("%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return raw_value
+
+
+def _extract_display_code_from_text(raw_text: str) -> str:
+    direct_code = _extract_code_from_text(raw_text)
+    if direct_code:
+        return direct_code
+    text_value = _strip_html_text(raw_text or "")
+    if not text_value:
+        return ""
+    patterns = [
+        re.compile(
+            r"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|your code|واتساب|فيسبوك)\D{0,24}([0-9]{3,4}(?:[\-\s][0-9]{3,4})|[0-9]{4,8})"
+        ),
+        re.compile(r"(?<!\d)([0-9]{3,4}[\-\s][0-9]{3,4})(?!\d)"),
+    ]
+    for pattern in patterns:
+        match = pattern.search(text_value)
+        if not match:
+            continue
+        candidate = str(match.group(1) or "").strip()
+        digits = re.sub(r"\D", "", candidate)
+        if 4 <= len(digits) <= 8 and not re.match(r"^(19|20)\d{2}$", digits):
+            return candidate
+    return ""
+
+
+def _fetch_site_ranges_snapshot() -> Dict[str, Any]:
+    page_url = _get("RANGES_URL", f"{SITE_URL}/my/ranges")
+    data_url = _get("MY_RANGES_DATA_URL", f"{SITE_URL}/my/ranges/data")
+    payload = _site_datatable_json(_build_site_session(), page_url, data_url, length=500)
+    rows: List[Dict[str, Any]] = []
+    for raw_row in payload.get("data", []) or []:
+        if not isinstance(raw_row, (list, tuple)):
+            continue
+        cells = list(raw_row) + [""] * max(0, 4 - len(raw_row))
+        links = _extract_links_from_html(cells[0])
+        range_name = _strip_html_text(cells[1])
+        amount = _strip_html_text(cells[2])
+        package = _strip_html_text(cells[3])
+        rows.append({
+            "range": range_name,
+            "platform": _guess_platform_from_payload(range_name) or _normalize_platform(range_name) or GENERAL_PLATFORM_NAME,
+            "amount": amount,
+            "package": package,
+            "download_url": links[0] if len(links) >= 1 else "",
+            "revoke_url": links[1] if len(links) >= 2 else "",
+        })
     return {
-        "recent": recent_rows,
-        "old": old_rows,
-        "recent_window": f"{recent_start.isoformat()} → {today.isoformat()}",
-        "old_window": f"{old_start.isoformat()} → {old_end.isoformat()}",
+        "page_url": page_url,
+        "data_url": data_url,
+        "records_total": int(payload.get("recordsTotal", len(rows)) or len(rows)),
+        "rows": rows,
     }
 
-def _format_site_code_rows(title: str, rows: List[Dict], window_text: str) -> str:
-    lines = [title, f"🗓️ الفترة: {window_text}", ""]
+
+def _format_site_range_rows(rows: List[Dict[str, Any]]) -> str:
     if not rows:
-        lines.append("لا توجد أكواد مطابقة في هذه الفترة.")
+        return "لا توجد أرقام أو رينجات محفوظة حالياً داخل الصفحة."
+    lines: List[str] = []
+    for idx, row in enumerate(rows, 1):
+        lines.append(f"{idx}. {row.get('range', 'غير معروف')}")
+        lines.append(f"   المنصة: {row.get('platform', GENERAL_PLATFORM_NAME)}")
+        if row.get("amount"):
+            lines.append(f"   الكمية: {row.get('amount')}")
+        if row.get("package"):
+            lines.append(f"   الباقة: {row.get('package')}")
+        if row.get("download_url"):
+            lines.append(f"   Download: {row.get('download_url')}")
+        if row.get("revoke_url"):
+            lines.append(f"   Revoke: {row.get('revoke_url')}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
+
+def _report_site_platforms(chat_id: int):
+    try:
+        data = _fetch_site_ranges_snapshot()
+        text = "\n".join([
+            "📂 صفحة my/ranges",
+            f"🔗 الصفحة: {data.get('page_url', '')}",
+            f"📦 عدد الرينجات/الأرقام المحفوظة: {data.get('records_total', 0)}",
+            "",
+            _format_site_range_rows(data.get("rows", [])),
+        ])
+        _chunked_send(chat_id, text)
+    except Exception as ranges_err:
+        logger.exception(f"Site ranges report error: {ranges_err}")
+        bot.send_message(chat_id, f"❌ حصل خطأ أثناء فتح my/ranges أو جلب الأرقام: {ranges_err}")
+
+
+def _fetch_site_codes_snapshot() -> Dict[str, Any]:
+    page_url = _get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages")
+    data_url = _get("MY_MESSAGES_DATA_URL", f"{SITE_URL}/my/messages/data")
+    payload = _site_datatable_json(_build_site_session(), page_url, data_url, length=1000)
+    rows: List[Dict[str, Any]] = []
+    for raw_row in payload.get("data", []) or []:
+        if not isinstance(raw_row, (list, tuple)):
+            continue
+        cells = list(raw_row) + [""] * max(0, 8 - len(raw_row))
+        message_text = html.unescape(str(cells[3] or "")).strip()
+        rows.append({
+            "range": _strip_html_text(cells[0]),
+            "number": _normalize_number(str(cells[1] or "")),
+            "platform": _normalize_platform(cells[2]) or _guess_platform_from_payload(cells[0], cells[2], message_text) or GENERAL_PLATFORM_NAME,
+            "message": message_text,
+            "code": _extract_display_code_from_text(message_text),
+            "used": _strip_html_text(cells[4]),
+            "price": _strip_html_text(cells[5]),
+            "package": _strip_html_text(cells[6]),
+            "time": _format_site_timestamp(cells[7]),
+        })
+    return {
+        "page_url": page_url,
+        "data_url": data_url,
+        "records_total": int(payload.get("recordsTotal", len(rows)) or len(rows)),
+        "rows": rows,
+    }
+
+
+def _format_site_code_rows(title: str, rows: List[Dict[str, Any]], page_url: str = "") -> str:
+    lines = [title]
+    if page_url:
+        lines.append(f"🔗 الصفحة: {page_url}")
+    lines.append(f"📨 عدد الأكواد المحفوظة: {len(rows)}")
+    lines.append("")
+    if not rows:
+        lines.append("لا توجد أكواد محفوظة حالياً داخل الصفحة.")
         return "\n".join(lines)
     for idx, row in enumerate(rows, 1):
-        snippet = str(row.get("message", "")).strip()
-        if len(snippet) > 90:
-            snippet = snippet[:90] + "…"
-        lines.append(
-            f"{idx}. {row.get('platform', 'General')} | {row.get('number', '')} | الكود: {row.get('code', '')} | الوقت: {row.get('time', '')}"
-        )
-        if row.get("sender"):
-            lines.append(f"   المرسل: {row.get('sender')}")
-        if snippet:
-            lines.append(f"   الرسالة: {snippet}")
-    return "\n".join(lines)
+        lines.append(f"{idx}. {row.get('range', 'غير معروف')} | {row.get('number', '')}")
+        lines.append(f"   المنصة: {row.get('platform', GENERAL_PLATFORM_NAME)}")
+        lines.append(f"   الكود: {row.get('code', 'غير مستخرج') or 'غير مستخرج'}")
+        if row.get("used"):
+            lines.append(f"   المستخدم: {row.get('used')}")
+        if row.get("price"):
+            lines.append(f"   السعر: {row.get('price')}")
+        if row.get("package"):
+            lines.append(f"   الباقة: {row.get('package')}")
+        if row.get("time"):
+            lines.append(f"   الوقت: {row.get('time')}")
+        if row.get("message"):
+            lines.append(f"   الرسالة كاملة: {row.get('message')}")
+        lines.append("")
+    return "\n".join(lines).strip()
+
 
 def _report_site_codes(chat_id: int):
     try:
         data = _fetch_site_codes_snapshot()
-        text = "\n\n".join([
-            "🧾 جلب الأكواد الجديدة والقديمة من الموقع",
-            _format_site_code_rows("🆕 الأكواد الجديدة", data.get("recent", []), data.get("recent_window", "")),
-            _format_site_code_rows("🗂️ الأكواد القديمة", data.get("old", []), data.get("old_window", "")),
-        ])
+        text = _format_site_code_rows("💬 صفحة my/messages", data.get("rows", []), data.get("page_url", ""))
         _chunked_send(chat_id, text)
     except Exception as codes_err:
         logger.exception(f"Site codes report error: {codes_err}")
-        bot.send_message(chat_id, f"❌ حصل خطأ أثناء جلب أكواد الموقع: {codes_err}")
+        bot.send_message(chat_id, f"❌ حصل خطأ أثناء فتح my/messages أو جلب الأكواد: {codes_err}")
+
 
 def dev_site_platforms_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
-    bot.answer_callback_query(call.id, "الميزة متوقفة", show_alert=True)
-    bot.send_message(call.message.chat.id, "⛔ فحص منصات الموقع متوقف لأن البوت صار يعتمد على الإضافة اليدوية فقط.")
+    bot.answer_callback_query(call.id, "⏳ جاري فتح my/ranges وجلب الأرقام...")
+    _report_site_platforms(call.message.chat.id)
+
 
 def dev_site_codes_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
-    bot.answer_callback_query(call.id, "الميزة متوقفة", show_alert=True)
-    bot.send_message(call.message.chat.id, "⛔ جلب أكواد الموقع متوقف لأن الجلب من الموقع تم تعطيله.")
+    bot.answer_callback_query(call.id, "⏳ جاري فتح my/messages وجلب الأكواد...")
+    _report_site_codes(call.message.chat.id)
+
 
 def siteplatforms_command(message):
     if not is_admin(message):
         return
-    bot.reply_to(message, "⛔ أمر فحص منصات الموقع متوقف. البوت الآن يدعم الإضافة اليدوية فقط.")
+    _report_site_platforms(message.chat.id)
+
 
 def sitecodes_command(message):
     if not is_admin(message):
         return
-    bot.reply_to(message, "⛔ أمر جلب أكواد الموقع متوقف لأن ربط الموقع تم تعطيله.")
+    _report_site_codes(message.chat.id)
 
 GENERAL_PLATFORM_NAME = "General"
 
@@ -8625,6 +8797,10 @@ def _build_developer_panel_markup() -> types.InlineKeyboardMarkup:
     mk.add(
         types.InlineKeyboardButton('🔐 تسجيل الدخول للموقع', callback_data='dev_site_login'),
     )
+    mk.add(
+        types.InlineKeyboardButton('📂 فتح my/ranges', callback_data='dev_site_platforms'),
+        types.InlineKeyboardButton('💬 فتح my/messages', callback_data='dev_site_codes'),
+    )
     return mk
 
 
@@ -8640,8 +8816,10 @@ def _developer_commands_text() -> str:
         '• /clearcookies ← حذف كل runtime cookies\n'
         '• /dbaudit ← تدقيق قاعدة الأرقام\n'
         '• /deleteplatform ← حذف كل أرقام منصة\n'
-        '• /confirm ← تأكيد حذف رقم من الانتظار\n\n'
-        'ومن لوحة المطور تقدر تستخدم زر ➕ إضافة أرقام من الموقع ثم تختار الدولة من my_sms وبعدها المنصة ليتم تسجيل كل أرقام الدولة دفعة واحدة.'
+        '• /confirm ← تأكيد حذف رقم من الانتظار\n'
+        '• /siteplatforms ← فتح صفحة my/ranges وجلب الأرقام المحفوظة\n'
+        '• /sitecodes ← فتح صفحة my/messages وجلب الأكواد المحفوظة بالكامل\n\n'
+        'ومن لوحة المطور تقدر تستخدم زر ➕ إضافة أرقام من الموقع ثم تختار الدولة من my_sms وبعدها المنصة ليتم تسجيل كل أرقام الدولة دفعة واحدة، وتقدر كمان تفتح my/ranges و my/messages مباشرة من اللوحة بعد تسجيل الدخول.'
     )
 
 
