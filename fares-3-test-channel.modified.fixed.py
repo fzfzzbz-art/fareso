@@ -194,6 +194,7 @@ TEST_MODE_INTERVAL_SECONDS = max(180, int(_get("TEST_MODE_INTERVAL_SECONDS", "18
 STORAGE_TARGET_GB = max(10240, int(_get("STORAGE_TARGET_GB", "10240") or "10240"))
 MAX_NUMBERS_PER_COUNTRY_BUCKET = max(1000, int(_get("MAX_NUMBERS_PER_COUNTRY_BUCKET", "1000000") or "1000000"))
 
+MANUAL_NUMBERS_ONLY_MODE = _env_flag("MANUAL_NUMBERS_ONLY_MODE", True)
 AUTO_SYNC_NUMBERS = _env_flag("AUTO_SYNC_NUMBERS", False)
 PRESERVE_EXISTING_NUMBERS_ON_FETCH = _env_flag("PRESERVE_EXISTING_NUMBERS_ON_FETCH", True)
 PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC = _env_flag("PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC", True)
@@ -202,9 +203,14 @@ SITE_DATATABLE_ALLOW_POST = _env_flag("SITE_DATATABLE_ALLOW_POST", False)
 LIVE_MY_SMS_ALLOW_AJAX_POST = _env_flag("LIVE_MY_SMS_ALLOW_AJAX_POST", False)
 SITE_FETCH_INCLUDE_SMS_RANGES = _env_flag("SITE_FETCH_INCLUDE_SMS_RANGES", False)
 SITE_DATASET_INCLUDE_SLOW_SMS_RANGES = _env_flag("SITE_DATASET_INCLUDE_SLOW_SMS_RANGES", False)
-AUTO_SYNC_SITE_DATA_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_DATA_ON_NEW_USER", True)
-AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER", True)
+AUTO_SYNC_SITE_DATA_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_DATA_ON_NEW_USER", False)
+AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER", False)
 AUTO_SYNC_SITE_MIN_INTERVAL_SECONDS = max(15, int(_get("AUTO_SYNC_SITE_MIN_INTERVAL_SECONDS", "60") or "60"))
+
+if MANUAL_NUMBERS_ONLY_MODE:
+    AUTO_SYNC_NUMBERS = False
+    AUTO_SYNC_SITE_DATA_ON_NEW_USER = False
+    AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER = False
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -1806,15 +1812,15 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
     if not target:
         return None
 
-    live_candidate = _fetch_latest_live_code_for_number(target, platform_hint)
-    if live_candidate:
-        _cache_code_for_number(target, platform_hint, live_candidate)
-        return live_candidate
-
     my_messages_candidate = _fetch_latest_my_messages_code_for_number(target, platform_hint)
     if my_messages_candidate:
         _cache_code_for_number(target, platform_hint, my_messages_candidate)
         return my_messages_candidate
+
+    live_candidate = _fetch_latest_live_code_for_number(target, platform_hint)
+    if live_candidate:
+        _cache_code_for_number(target, platform_hint, live_candidate)
+        return live_candidate
 
     try:
         session = _build_site_session()
@@ -2270,19 +2276,70 @@ def _build_site_country_user_notification(platform: str, country_name: str, adde
     ])
 
 
+def _notify_channel_country_add(platform: str, country_name: str, added_count: int, country_flag: str = '🌐') -> None:
+    if int(added_count or 0) <= 0:
+        return
+    text_value = _build_site_country_user_notification(platform, country_name, added_count, country_flag=country_flag)
+    try:
+        bot.send_message(
+            CHANNEL_ID,
+            text_value,
+            reply_markup=_build_channel_post_markup(),
+        )
+        log_event(
+            "SITE_COUNTRY_CHANNEL_NOTIFY",
+            {
+                "count": int(added_count or 0),
+                "platform": _display_platform_name(platform),
+                "country": str(country_name or 'غير محددة').strip() or 'غير محددة',
+            },
+        )
+    except Exception as channel_notify_err:
+        logger.warning(f"channel country notify failed: {channel_notify_err}")
+
+
 def _notify_users_country_add(platform: str, country_name: str, added_count: int, country_flag: str = '🌐') -> None:
     if int(added_count or 0) <= 0:
         return
     text_value = _build_site_country_user_notification(platform, country_name, added_count, country_flag=country_flag)
+    payload = {
+        "count": int(added_count or 0),
+        "platform": _display_platform_name(platform),
+        "country": str(country_name or 'غير محددة').strip() or 'غير محددة',
+    }
     _broadcast_text_to_users_async(
         text_value,
         "SITE_COUNTRY_USERS_NOTIFY",
-        {
-            "count": int(added_count or 0),
-            "platform": _display_platform_name(platform),
-            "country": str(country_name or 'غير محددة').strip() or 'غير محددة',
-        },
+        payload,
     )
+    _notify_channel_country_add(platform, country_name, added_count, country_flag=country_flag)
+
+
+def _notify_grouped_country_adds(new_items: List[Dict], source: str = "manual") -> None:
+    grouped: Dict[Tuple[str, str, str], int] = {}
+    for raw_item in _dedupe_numbers(new_items):
+        row = _enrich_number_item(raw_item)
+        if not row:
+            continue
+        platform_name = _normalize_platform(row.get("platform", "")) or "General"
+        info = _country_info_from_row(row.get("number", ""), row)
+        country_name = str(row.get("country_name_ar") or row.get("country_name") or info.get("name") or "غير محددة").strip() or "غير محددة"
+        country_flag = str(row.get("country_flag") or info.get("flag") or "🌐").strip() or "🌐"
+        key = (platform_name, country_name, country_flag)
+        grouped[key] = grouped.get(key, 0) + 1
+
+    for (platform_name, country_name, country_flag), count in sorted(grouped.items(), key=lambda pair: (-pair[1], pair[0][1], pair[0][0])):
+        _notify_users_country_add(platform_name, country_name, count, country_flag=country_flag)
+
+    if grouped:
+        log_event(
+            "COUNTRY_PLATFORM_ADD_NOTIFY",
+            {
+                "groups": len(grouped),
+                "count": len(_dedupe_numbers(new_items)),
+                "source": source,
+            },
+        )
 
 
 def _notify_users_about_new_numbers(new_items: List[Dict], source: str = "sync"):
@@ -4672,6 +4729,7 @@ def txt_platform_selected_v2(call):
     log_event("TXT_IMPORT_V2", {"count": len(added_items), "platform": platform})
 
     if added_items:
+        _notify_grouped_country_adds(added_items, source="txt")
         import io
         icon = PLATFORM_BUTTON_ICONS.get(platform, "📂")
         txt_lines = [
@@ -5752,6 +5810,8 @@ def cookies_center_command(message):
 
 # AUTO_SYNC_NUMBERS controlled at top of file
 INITIAL_SYNC_ON_START = _env_flag("INITIAL_SYNC_ON_START", False)
+if MANUAL_NUMBERS_ONLY_MODE:
+    INITIAL_SYNC_ON_START = False
 
 def _report_site_platforms(chat_id: int):
     try:
@@ -8481,7 +8541,7 @@ def siteadd_number_callback(call):
     country_label = f"{final_row.get('country_flag', '🌐')} {final_row.get('country_name_ar', 'غير محددة')}"
 
     if added_items:
-        _notify_users_about_new_numbers(added_items, source='site')
+        _notify_grouped_country_adds(added_items, source='site')
         _notify_admin_site_country_add(
             final_row.get('country_name_ar', 'غير محددة'),
             final_row.get('country_flag', '🌐'),
@@ -9510,7 +9570,7 @@ def _process_manual_add(message):
     added = len(added_items)
     log_event("MANUAL_ADD", {"count": added, "platform": selected_platform or "mixed"})
     if added_items:
-        _notify_users_about_new_numbers(added_items, source="manual")
+        _notify_grouped_country_adds(added_items, source="manual")
 
     platform_counts = {}
     for item in prepared:
