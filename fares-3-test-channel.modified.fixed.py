@@ -1801,6 +1801,11 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
         _cache_code_for_number(target, platform_hint, live_candidate)
         return live_candidate
 
+    my_messages_candidate = _fetch_latest_my_messages_code_for_number(target, platform_hint)
+    if my_messages_candidate:
+        _cache_code_for_number(target, platform_hint, my_messages_candidate)
+        return my_messages_candidate
+
     try:
         session = _build_site_session()
         session.headers.update({
@@ -1890,6 +1895,7 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
         return cached_candidate
 
     return None
+
 
 DEFAULT_PLATFORMS = [
     "WhatsApp", "Telegram", "TikTok", "Instagram",
@@ -2974,14 +2980,17 @@ def _build_platform_country_markup(platform: str, page: int = 0) -> types.Inline
 
 def _build_number_actions_markup() -> types.InlineKeyboardMarkup:
     mk = types.InlineKeyboardMarkup(row_width=1)
-    mk.add(types.InlineKeyboardButton("📋 Copy Number", callback_data="num_copy"))
-    mk.add(types.InlineKeyboardButton("🔄 Change Number", callback_data="num_change"))
-    mk.add(types.InlineKeyboardButton("🌍 Change Country", callback_data="num_back_countries"))
+    mk.add(types.InlineKeyboardButton("📋 نسخ الرقم", callback_data="num_copy"))
+    mk.add(types.InlineKeyboardButton("🔄 تغيير الرقم", callback_data="num_change"))
+    mk.add(types.InlineKeyboardButton("🌍 تغيير الدولة", callback_data="num_back_countries"))
+    messages_url = str(_get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages") or "").strip()
+    if messages_url:
+        mk.add(types.InlineKeyboardButton("💬 فتح my/messages", url=messages_url))
     if TEST_MAIN_CHANNEL_URL:
-        mk.add(types.InlineKeyboardButton("👥 Group", url=TEST_MAIN_CHANNEL_URL))
+        mk.add(types.InlineKeyboardButton("👥 الجروب", url=TEST_MAIN_CHANNEL_URL))
     else:
-        mk.add(types.InlineKeyboardButton("👥 Group", callback_data="contact_dev"))
-    mk.add(types.InlineKeyboardButton("🔍 Check Code", callback_data="num_check"))
+        mk.add(types.InlineKeyboardButton("👥 الجروب", callback_data="contact_dev"))
+    mk.add(types.InlineKeyboardButton("🔍 فحص كود الرقم", callback_data="num_check"))
     return mk
 
 
@@ -3089,12 +3098,13 @@ def _format_assigned_number_card(number: str, platform: str, country_info: Optio
     country_name = html.escape(str(info.get("name", "Unknown") or "Unknown"))
     platform_display = html.escape(str(_display_platform_name(platform or GENERAL_PLATFORM_NAME) or GENERAL_PLATFORM_NAME))
     return (
-        "🟢 <b>Number Successfully Assigned!</b>\n\n"
-        f"• 🧠 <b>Number</b> ~ <code>{number_html}</code>\n"
-        f"• 🌍 <b>Country</b> ~ {country_flag} {country_name}\n"
-        f"• 📲 <b>Platform</b> ~ {platform_display}\n\n"
-        "📡 ~&gt; <b>Waiting For OTP..</b> 🧠\n\n"
-        "🟢 <b>Number Is Active!</b>"
+        "🟢 <b>تم تثبيت الرقم بنجاح</b>\n\n"
+        f"• 🧠 <b>الرقم</b> ~ <code>{number_html}</code>\n"
+        f"• 🌍 <b>الدولة</b> ~ {country_flag} {country_name}\n"
+        f"• 📲 <b>المنصة</b> ~ {platform_display}\n\n"
+        "📡 <b>البوت منتظر وصول الكود لهذا الرقم فقط</b>\n"
+        "💬 أول ما الكود يوصل من صفحة <code>my/messages</code> أو من مصادر الموقع، هيتبعت لك هنا تلقائياً.\n\n"
+        "🟢 <b>الرقم شغال وجاهز</b>"
     )
 
 
@@ -4022,32 +4032,41 @@ def _deliver_latest_code_to_watch(watch: Dict[str, Any], fetched_payload: Option
     received_at = str((data or {}).get("date") or (data or {}).get("created_at") or (data or {}).get("time") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
     detected_platform = _normalize_platform((data or {}).get("platform") or (data or {}).get("service") or platform or GENERAL_PLATFORM_NAME)
     info = dict(watch_data.get("country_info") or _get_country_info(number) or {})
+    delivery_text = _build_auto_code_delivery_message(
+        number,
+        detected_platform,
+        info,
+        code_value,
+        received_at,
+        sms_text=sms_text,
+    )
     try:
-        _notify_code_to_channel(
-            number,
-            detected_platform,
-            code_value,
-            country_info=info,
-            received_at=received_at,
-            sms_text=sms_text,
+        _send_message_with_retry(
+            chat_id,
+            delivery_text,
+            parse_mode="HTML",
+            reply_markup=_build_number_actions_markup(),
         )
         try:
-            _send_message_with_retry(
-                chat_id,
-                "✅ تم إرسال الكود إلى القناة الرسمية فقط: @fz_z_Z",
-                parse_mode="HTML",
+            _notify_code_to_channel(
+                number,
+                detected_platform,
+                code_value,
+                country_info=info,
+                received_at=received_at,
+                sms_text=sms_text,
             )
-        except Exception:
-            pass
+        except Exception as channel_err:
+            logger.warning(f"AUTO_CODE_WATCH channel mirror warning for {number}: {channel_err}")
         _cache_code_for_number(number, detected_platform, data)
         _mark_auto_code_watch_seen(user_id, number, code_value)
         _finalize_delivered_number_for_user(user_id, number)
         _clear_private_delivery_failure(user_id)
-        logger.info(f"⚡ [AUTO-WATCH] تم إرسال الكود إلى القناة فقط {'يدوياً' if manual_trigger else 'تلقائياً'} للرقم {number}")
+        logger.info(f"⚡ [AUTO-WATCH] تم إرسال الكود للمستخدم {'يدوياً' if manual_trigger else 'تلقائياً'} للرقم {number}")
         return True
     except Exception as delivery_err:
         _record_private_delivery_failure(watch_data, str(delivery_err), code_value=code_value)
-        logger.warning(f"AUTO_CODE_WATCH channel-only send error for {number}: {delivery_err}")
+        logger.warning(f"AUTO_CODE_WATCH private send error for {number}: {delivery_err}")
         return False
 
 
@@ -4481,6 +4500,14 @@ _EXTRA_PLATFORM_ALIASES = {
 for _alias, _canonical in _EXTRA_PLATFORM_ALIASES.items():
     if _alias not in PLATFORM_CANONICAL_ALIASES:
         PLATFORM_CANONICAL_ALIASES[_alias] = _canonical
+
+SITE_ADD_FIXED_PLATFORM_CHOICES = [
+    "WhatsApp",
+    "TikTok",
+    "Facebook",
+    "Instagram",
+    "Snapchat",
+]
 
 def dev_fetch_site_callback(call):
     """يفتح تدفق إضافة أرقام الموقع: دولة ← منصة ← إضافة جماعية."""
@@ -6216,6 +6243,46 @@ def _report_site_codes(chat_id: int):
         bot.send_message(chat_id, f"❌ حصل خطأ أثناء فتح my/messages أو جلب الأكواد: {codes_err}")
 
 
+def _fetch_latest_my_messages_code_for_number(number: str, platform_hint: str = "") -> Optional[Dict[str, Any]]:
+    target = _normalize_number(number)
+    if not target:
+        return None
+
+    try:
+        snapshot = _fetch_site_codes_snapshot()
+    except Exception as snapshot_err:
+        logger.debug(f"my/messages lookup failed for {target}: {snapshot_err}")
+        return None
+
+    target_digits = target.lstrip('+')
+    hint = _normalize_platform(platform_hint)
+    exact_platform: List[Dict[str, Any]] = []
+    same_number: List[Dict[str, Any]] = []
+
+    for row in snapshot.get("rows", []) or []:
+        if not isinstance(row, dict):
+            continue
+        item_number = _normalize_number(row.get("number", ""))
+        if not item_number or item_number.lstrip('+') != target_digits:
+            continue
+        normalized_item = dict(row)
+        normalized_item["number"] = item_number
+        normalized_item["platform"] = _normalize_platform(
+            normalized_item.get("platform") or normalized_item.get("service") or hint or GENERAL_PLATFORM_NAME
+        )
+        normalized_item["service"] = normalized_item["platform"]
+        normalized_item["text"] = str(normalized_item.get("message") or "").strip()
+        normalized_item["date"] = str(normalized_item.get("time") or "").strip()
+        normalized_item["source"] = "my_messages"
+        if hint and _platform_hint_matches(normalized_item.get("platform", ""), hint):
+            exact_platform.append(normalized_item)
+        else:
+            same_number.append(normalized_item)
+
+    picked = exact_platform[0] if exact_platform else (same_number[0] if same_number else None)
+    return picked or None
+
+
 def dev_site_platforms_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
@@ -7176,13 +7243,23 @@ def _site_add_country_platforms(state: Optional[Dict]) -> List[str]:
     rows = _site_add_selected_country_rows(state)
     found: List[str] = []
     seen = set()
-    for row in rows:
-        routed = _route_platform_for_site_row(row, fallback=str(row.get('raw_platform') or row.get('platform') or ''))
-        normalized = _normalize_platform(routed)
-        if not normalized or normalized in seen or normalized == GENERAL_PLATFORM_NAME:
-            continue
+
+    def _push_platform(value: str) -> None:
+        normalized = _normalize_platform(value)
+        if not normalized or normalized == GENERAL_PLATFORM_NAME or normalized in seen:
+            return
         seen.add(normalized)
         found.append(normalized)
+
+    # المنصات الأساسية المطلوبة تظهر دائماً أولاً داخل شاشة إضافة أرقام الموقع.
+    for platform_name in SITE_ADD_FIXED_PLATFORM_CHOICES:
+        _push_platform(platform_name)
+
+    # وبعدها نُلحق أي منصات إضافية اكتشفناها فعلياً من بيانات الموقع.
+    for row in rows:
+        routed = _route_platform_for_site_row(row, fallback=str(row.get('raw_platform') or row.get('platform') or ''))
+        _push_platform(routed)
+
     if found:
         return found
     return list(_platform_picker_platforms())
@@ -7299,9 +7376,8 @@ def _build_site_add_number_markup(user_id: int) -> types.InlineKeyboardMarkup:
 
     platforms = _site_add_country_platforms(state)
     for idx, platform in enumerate(platforms):
-        platform_rows = _site_add_platform_rows(selected_country_rows, platform)
-        platform_total = len(platform_rows) or selected_country_total
-        label = f"{_platform_button_label(platform, include_count=False)} ({platform_total})"
+        # المطلوب إن اختيار أي منصة يضيف كل أرقام الدولة عليها بدون تجزئة.
+        label = f"{_platform_button_label(platform, include_count=False)} ({selected_country_total})"
         mk.add(types.InlineKeyboardButton(label[:60], callback_data=f"siteaddplt_{idx}"))
     mk.add(types.InlineKeyboardButton('⬅️ رجوع للدول', callback_data='siteadd_back_countries'))
     mk.add(types.InlineKeyboardButton('🔄 تحديث كل مصادر الموقع', callback_data='siteadd_refresh'))
@@ -8003,11 +8079,10 @@ def siteadd_platform_callback(call):
         bot.answer_callback_query(call.id, 'المنصة غير موجودة', show_alert=True)
         return
 
-    target_rows = _site_add_platform_rows(rows, selected_platform)
-    if not target_rows:
-        target_rows = [dict(item) for item in rows]
+    # اختيار المنصة يجب أن يزامن كل أرقام الدولة داخل المنصة المختارة.
+    target_rows = [dict(item) for item in rows]
 
-    bot.answer_callback_query(call.id, '⏳ جاري مزامنة أرقام الدولة...')
+    bot.answer_callback_query(call.id, '⏳ جاري مزامنة كل أرقام الدولة داخل المنصة المختارة...')
     state['selected_platform'] = selected_platform
     state['selected_country_rows'] = []
     state['selected_country_total'] = len(target_rows)
@@ -8060,9 +8135,9 @@ def siteadd_platform_callback(call):
         f"♻️ الأرقام الموجودة مسبقاً ومازالت بالموقع: {duplicated_count}",
         f"🗑️ الأرقام التي تم حذفها لأنها اختفت من الموقع: {len(removed_items)}",
         f"📦 إجمالي أرقام الدولة الحالية داخل المنصة بعد المزامنة: {len(current_target_rows)}",
-        f"📲 الأرقام اللي اتعالِجت للمنصة المختارة: {len(prepared)}",
+        f"📲 كل أرقام الدولة التي اتعالِجت للمنصة المختارة: {len(prepared)}",
         '',
-        'دلوقتي نفس الدولة بتتحدث كمزامنة كاملة: اللي بالموقع يفضل، واللي اتحذف من الموقع بيتشال من البوت.',
+        'اختيار أي منصة من الأزرار فوق بيضيف كل أرقام الدولة عليها مباشرة.',
         'ولو حابب تضيف نفس الدولة على منصة تانية تقدر تختار منصة تانية من نفس الأزرار.',
     ]
     _send_or_edit(
