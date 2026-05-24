@@ -195,6 +195,8 @@ STORAGE_TARGET_GB = max(10240, int(_get("STORAGE_TARGET_GB", "10240") or "10240"
 MAX_NUMBERS_PER_COUNTRY_BUCKET = max(1000, int(_get("MAX_NUMBERS_PER_COUNTRY_BUCKET", "1000000") or "1000000"))
 
 AUTO_SYNC_NUMBERS = _env_flag("AUTO_SYNC_NUMBERS", False)
+PRESERVE_EXISTING_NUMBERS_ON_FETCH = _env_flag("PRESERVE_EXISTING_NUMBERS_ON_FETCH", True)
+PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC = _env_flag("PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC", True)
 
 BASE_DIR = Path(__file__).resolve().parent
 
@@ -8122,7 +8124,31 @@ def _sync_site_country_numbers_for_platform(platform: str, country_key: str, ite
             continue
         kept_rows.append(row)
 
-    merged_rows = _replace_numbers_db(kept_rows + prepared_rows)
+    def _numbers_set(rows: List[Dict]) -> set:
+        found = set()
+        for row in rows:
+            number = _normalize_number(row.get('number', ''))
+            if number:
+                found.add(number)
+        return found
+
+    before_numbers = _numbers_set(before_target_rows)
+    incoming_numbers = _numbers_set(prepared_rows)
+    preserved_numbers = set()
+    rows_to_merge = list(kept_rows) + list(prepared_rows)
+
+    if PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC:
+        preserved_numbers = before_numbers - incoming_numbers
+        if preserved_numbers:
+            rows_to_merge.extend(
+                [
+                    dict(row)
+                    for row in before_target_rows
+                    if _normalize_number(row.get('number', '')) in preserved_numbers
+                ]
+            )
+
+    merged_rows = _replace_numbers_db(rows_to_merge)
 
     after_target_rows: List[Dict] = []
     for item in merged_rows:
@@ -8139,36 +8165,30 @@ def _sync_site_country_numbers_for_platform(platform: str, country_key: str, ite
             continue
         after_target_rows.append(row)
 
-    def _numbers_set(rows: List[Dict]) -> set:
-        found = set()
-        for row in rows:
-            number = _normalize_number(row.get('number', ''))
-            if number:
-                found.add(number)
-        return found
-
-    before_numbers = _numbers_set(before_target_rows)
     after_numbers = _numbers_set(after_target_rows)
-    added_numbers = after_numbers - before_numbers
-    removed_numbers = before_numbers - after_numbers
-    kept_numbers = after_numbers & before_numbers
+    added_numbers = incoming_numbers - before_numbers
+    kept_numbers = incoming_numbers & before_numbers
+    removed_numbers = set() if PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC else (before_numbers - after_numbers)
 
     added_items = [row for row in after_target_rows if _normalize_number(row.get('number', '')) in added_numbers]
     removed_items = [row for row in before_target_rows if _normalize_number(row.get('number', '')) in removed_numbers]
+    preserved_items = [row for row in after_target_rows if _normalize_number(row.get('number', '')) in preserved_numbers]
 
     return {
         'target_rows': after_target_rows,
         'added_items': added_items,
         'removed_items': removed_items,
+        'preserved_items': preserved_items,
         'added_count': len(added_numbers),
         'removed_count': len(removed_numbers),
         'existing_count': len(kept_numbers),
+        'preserved_count': len(preserved_numbers),
         'total_count': len(after_numbers),
     }
 
 
 
-def _notify_admin_site_country_add(country_name: str, country_flag: str, platform: str, added_count: int, removed_count: int = 0, total_count: int = 0) -> None:
+def _notify_admin_site_country_add(country_name: str, country_flag: str, platform: str, added_count: int, removed_count: int = 0, total_count: int = 0, preserved_count: int = 0) -> None:
     if not ADMIN_ID:
         return
     safe_country_name = str(country_name or 'غير محددة').strip() or 'غير محددة'
@@ -8178,6 +8198,8 @@ def _notify_admin_site_country_add(country_name: str, country_flag: str, platfor
         '',
         f"📂 المنصة: {_display_platform_name(platform)}",
         f"🆕 الجديد: {max(0, int(added_count or 0))}",
+        f"♻️ الموجود مسبقاً ومازال ظاهر بالموقع: {max(0, int(total_count or 0)) - max(0, int(added_count or 0)) - max(0, int(preserved_count or 0))}",
+        f"🧷 الأرقام القديمة التي تم الإبقاء عليها ولم تُحذف: {max(0, int(preserved_count or 0))}",
         f"🗑️ المحذوف لأنه لم يعد موجوداً بالموقع: {max(0, int(removed_count or 0))}",
         f"📦 الإجمالي الحالي داخل البوت لنفس الدولة/المنصة: {max(0, int(total_count or 0))}",
         f"🕐 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
@@ -8231,6 +8253,7 @@ def siteadd_platform_callback(call):
     sync_result = _sync_site_country_numbers_for_platform(selected_platform, selected_country_key, prepared)
     added_for_target = list(sync_result.get('added_items', []) or [])
     removed_items = list(sync_result.get('removed_items', []) or [])
+    preserved_items = list(sync_result.get('preserved_items', []) or [])
     current_target_rows = list(sync_result.get('target_rows', []) or [])
     duplicated_count = int(sync_result.get('existing_count', 0) or 0)
 
@@ -8253,6 +8276,7 @@ def siteadd_platform_callback(call):
         len(added_for_target),
         len(removed_items),
         len(current_target_rows),
+        len(preserved_items),
     )
 
     text_lines = [
@@ -8261,7 +8285,8 @@ def siteadd_platform_callback(call):
         f"🌍 الدولة: {country_info.get('flag', '🌐')} {country_title}",
         f"📂 المنصة: {_display_platform_name(selected_platform)}",
         f"🆕 الأرقام الجديدة الآن: {len(added_for_target)}",
-        f"♻️ الأرقام الموجودة مسبقاً ومازالت بالموقع: {duplicated_count}",
+        f"♻️ الأرقام الموجودة مسبقاً ومازالت ظاهرة بالموقع: {duplicated_count}",
+        f"🧷 الأرقام القديمة التي تم الإبقاء عليها ولم تُحذف: {len(preserved_items)}",
         f"🗑️ الأرقام التي تم حذفها لأنها اختفت من الموقع: {len(removed_items)}",
         f"📦 إجمالي أرقام الدولة الحالية داخل المنصة بعد المزامنة: {len(current_target_rows)}",
         f"📲 كل أرقام الدولة التي اتعالِجت للمنصة المختارة: {len(prepared)}",
@@ -10109,18 +10134,24 @@ def _legacy_fetch_numbers_smart(notify_users: bool = True) -> Tuple[bool, int]:
         logger.info(f"🔄 المنصات المحدّثة ({len(dynamic_platforms)}): {dynamic_platforms[:10]}…")
 
     if new_numbers:
-        unique = _replace_numbers_db(unique)
+        if PRESERVE_EXISTING_NUMBERS_ON_FETCH:
+            merged_snapshot = _consolidate_number_sources(before_items + unique)
+            unique = _replace_numbers_db(merged_snapshot)
+        else:
+            unique = _replace_numbers_db(unique)
         _refresh_dynamic_platforms(discovered_platforms)
         added_items = _find_newly_added_numbers(before_items, unique)
+        deleted_count = 0 if PRESERVE_EXISTING_NUMBERS_ON_FETCH else max(0, len(before_items) - len(unique))
         log_event("NUMBERS_SYNCED", {
             "count":   len(unique),
             "new":     len(added_items),
-            "deleted": max(0, len(before_items) - len(unique)),
+            "deleted": deleted_count,
         })
         logger.info(
             f"📦 [FETCH] الأرقام السابقة: {len(before_items)} | "
-            f"الأرقام الجديدة المجلوبة: {len(unique)} | "
-            f"أرقام جديدة فعلاً: {len(added_items)}"
+            f"الأرقام الحالية بعد الجلب: {len(unique)} | "
+            f"أرقام جديدة فعلاً: {len(added_items)} | "
+            f"وضع الحفظ: {'مفعّل' if PRESERVE_EXISTING_NUMBERS_ON_FETCH else 'معطّل'}"
         )
         if notify_users and added_items:
             _notify_users_about_new_numbers(added_items, source="sync")
@@ -10239,7 +10270,7 @@ def auto_sync_loop():
     ─────────────────────────────────────────────────────
     حلقة المزامنة التلقائية – محسَّنة
     • تعمل كل AUTO_SYNC_INTERVAL_MINUTES دقيقة (افتراضي 3)
-    • تحذف الأرقام القديمة قبل كل جلب ناجح
+    • تحفظ الأرقام القديمة افتراضياً عند كل جلب ناجح إلا إذا تم تعطيل وضع الحفظ من الإعدادات
     • تسجّل نتيجة كل دورة بالتفصيل
     • تعيد المحاولة فوراً إذا فشل الجلب (مع تأخير أقصر)
     ─────────────────────────────────────────────────────
@@ -10261,7 +10292,7 @@ def auto_sync_loop():
         cycle_start = time.time()
         logger.info(f"🔄 [AUTO-SYNC] بدء دورة جلب الأرقام من {NUMBERS_SYNC_SOURCE}...")
         try:
-            # ─── احذف الأرقام القديمة قبل الجلب (تُحدَّث في _replace_numbers_db) ───
+            # ─── الجلب يحدّث المخزن مع الحفاظ على الأرقام القديمة افتراضياً ───
             old_count = len(numbers_db.get("numbers", []))
             ok, cnt = fetch_numbers_smart(notify_users=True)
             elapsed = round(time.time() - cycle_start, 1)
@@ -10270,7 +10301,7 @@ def auto_sync_loop():
                 consecutive_failures = 0
                 logger.info(
                     f"✅ [AUTO-SYNC] نجح الجلب | {cnt} رقم | كان {old_count} | "
-                    f"تم الاستبدال | {elapsed}ث"
+                    f"وضع الحفظ={'مفعّل' if PRESERVE_EXISTING_NUMBERS_ON_FETCH else 'معطّل'} | {elapsed}ث"
                 )
             else:
                 consecutive_failures += 1
