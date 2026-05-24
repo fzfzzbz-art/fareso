@@ -89,44 +89,58 @@ def _env_required(name: str):
     return value
 
 _DEFAULTS = {
-    # ⚠️ الحماية: لا تضع أي أسرار حقيقية داخل الملف.
-    # ضع القيم الحساسة عبر Environment Variables أو ملف .env فقط.
-    "BOT_TOKEN":   "8666549632:AAHvHgEKwhvdj7BzivhFsxrmU7G2vBAcRx4",
-    "ADMIN_ID":    "7231690686",
-    "SITE_URL":    "https://www.ivasms.com",
-    "SITE_COOKIE": "",
-    "SITE_COOKIE_FILE": "",
-    "SITE_EMAIL":  "",
-    "SITE_PASS":   "",
+    # بيانات البوت والمسؤول
+    "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
+    "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
+
+    # روابط الموقع الحالية (Basha IPRN VAS)
+    "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
+    "HOME_URL": os.environ.get("HOME_URL", "https://basha.cc/home"),
+    "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
+    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
+    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
+    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers"),
+    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
+    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
+    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
+    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
+    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
+    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
+    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/telegram-setup"),
+    "SITE_TELEGRAM_CHAT_ID": os.environ.get("SITE_TELEGRAM_CHAT_ID", os.environ.get("ADMIN_ID", "")),
+
+    # بيانات الحساب (تُقرأ من البيئة)
+    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
+    "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
+    "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
+
+    # الكوكيز والتمويه
+    "SITE_COOKIE": os.environ.get("SITE_COOKIE", ""),
+    "USER_AGENT": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "SITE_COOKIE_FILE": "runtime_cookies.json"
 }
 
 EMBEDDED_SITE_COOKIES = [
     {
+        "name": "ivas_sms_session",
+        "value": "eyJpdiI6InIzRkw2UVNkdjcyK2Z5Mk1UVWhIUHc9PSIsInZhbHVlIjoiQlc3OERhWkUrYmUrbWlLNXR6QjBiMVdETWNxeC9lVzIvbHNQaVE2R2duOEJEY0VhSzhrSUM0cW1XMTJVR0VCMkJpM3dJTkhXNkwzaXkyckwwYXpvaUdrblBYMmtIYllReXVMY2JGZjlLTVNMa0l1WkxDZVp5YzZocUJrZmtER0EiLCJtYWMiOiJiYzI5NTA0MWY4Mjg0ZTY5MDU0NTZiMmQ2MDgxMGYyM2E3ZjVkNzliYTlmNDJlZjI5YWI1YzI3YjdlYTFmMGEzIiwidGFnIjoiIn0%3D",
         "domain": "www.ivasms.com",
-        "expirationDate": 1776031741.312787,
-        "hostOnly": True,
-        "httpOnly": False,
-        "name": "XSRF-TOKEN",
         "path": "/",
-        "sameSite": "lax",
+        "expires": 1779472200.636235,
+        "httpOnly": True,
         "secure": False,
-        "session": False,
-        "storeId": "0",
-        "value": "eyJpdiI6IkdvYW1LWmh2ZVBKMVVUSkZ6RE1qTnc9PSIsInZhbHVlIjoiZ2pkeDduSFdMZlVhVVZxWktySHEyeFpDZHNaajRrZUxNS3k0MUlGbmJjbWdmQ0tMY1JVeHBtL0FNUGcvM3NaellKS3FUQlRWNCs2WEgybzNrSWxHMys4VmM2UW5vRlpDNEtLNGh3VVk0Tm55Y283NGxpUHZvMU9jQUVPTzhwb08iLCJtYWMiOiI0YjY3Y2RkZDg4YmVkM2ExNjY0NDhlNmM4YjQxMGNkMDg2ZjI2ODZhYTQzYmUxZTNlNzZjOTY2MWM2M2M3YzFiIiwidGFnIjoiIn0=",
+        "sameSite": "lax",
         "origin": "https://www.ivasms.com",
     },
     {
+        "name": "XSRF-TOKEN",
+        "value": "eyJpdiI6IlgyQzhvWWlZa3h3ckRaMDljY3hlZ1E9PSIsInZhbHVlIjoiUDBLVEVlK3JjRnFMbU5nVTBaZEQ3UXpXUWJiMVRZbEtnVHk3WkN6Mmx2VDAzOXNxQXlFWjFIMjdBWk9CeENyMk1LNUQ1enNMTzlHaW1JQjhDNlNnWk40dUJSVWt4UXpUTE5YZk1rZFMyQjVIdllxUnNvVnY0aGtGNFdhblhvc3QiLCJtYWMiOiI1Y2ViMWM4OWJlNzI3MGNjNGY0MGM5NGI5NGU3ODM0NjU2ZGY5Y2QzMzNhNWFkNmVkM2JjZjNkOTc1YjM2OGY0IiwidGFnIjoiIn0%3D",
         "domain": "www.ivasms.com",
-        "expirationDate": 1776031741.312871,
-        "hostOnly": True,
-        "httpOnly": True,
-        "name": "ivas_sms_session",
         "path": "/",
-        "sameSite": "lax",
+        "expires": 1779472200.636071,
+        "httpOnly": False,
         "secure": False,
-        "session": False,
-        "storeId": "0",
-        "value": "eyJpdiI6Ikk2OEEyV3laRUI1cXFUSGp1VGZKaHc9PSIsInZhbHVlIjoiRFdoeVN2VUNCeHJoaGRwa28vWEw1dUkxK0VjYUZTWmxkcHAraVhVM3BPMjdpaGF2WFA1a1hJeDBaU1FjRW1maEhYOEdtRDhlekp1cFUyTStaVzZrT0tjZUNSc0ZSVmJ1aFRseS9RRW55cUY5SWdlN0VlM1FSdjBicW14RFkyUmQiLCJtYWMiOiJhZTUwZmUyZmY4YjRhYmY0YjFkMjU3NTk5NmVkYmFmYTg0MDc2ZmYyNjY1YjI0MWQ2OGI1ODI2NDVkMTM3NTc2IiwidGFnIjoiIn0%3D",
+        "sameSite": "lax",
         "origin": "https://www.ivasms.com",
     },
 ]
@@ -432,18 +446,70 @@ def _install_runtime_guardrails_once() -> None:
             _log_uncaught(args.exc_type, args.exc_value, args.exc_traceback)
         threading.excepthook = _thread_hook
 
-_HOSTING_HTTP_HOST = os.getenv("HOST", "0.0.0.0").strip() or "0.0.0.0"
+_HOSTING_HTTP_HOST = os.getenv("HOSTING_HTTP_HOST", "0.0.0.0").strip() or "0.0.0.0"
 
-try:
-    _HOSTING_HTTP_PORT = int(str(os.getenv("PORT", "0") or "0").strip())
-except ValueError:
-    _HOSTING_HTTP_PORT = 0
 
-_HOSTING_HTTP_ENABLED = str(os.getenv("HOSTING_HTTP_ENABLED", "1" if _HOSTING_HTTP_PORT else "0")).strip().lower() in {"1", "true", "yes", "on"}
+def _detect_hosting_port() -> int:
+    for env_name in (
+        "PORT",
+        "SERVER_PORT",
+        "WEB_PORT",
+        "APP_PORT",
+        "HOSTING_HTTP_PORT",
+    ):
+        raw_value = str(os.getenv(env_name, "") or "").strip()
+        if not raw_value:
+            continue
+        try:
+            port = int(raw_value)
+            if 0 < port < 65536:
+                return port
+        except ValueError:
+            logger.warning(f"Ignoring invalid {env_name} value: {raw_value}")
+    return 8080
+
+
+_HOSTING_HTTP_PORT = _detect_hosting_port()
+_HOSTING_HTTP_ENABLED = _env_flag("HOSTING_HTTP_ENABLED", True)
+_HOSTING_HTTP_STRICT_PORT = _env_flag("HOSTING_HTTP_STRICT_PORT", bool(str(os.getenv("PORT", "") or "").strip()))
 
 _hosting_http_lock = threading.Lock()
-
 _hosting_http_started = False
+
+
+def _detect_public_base_url() -> str:
+    candidates = [
+        os.getenv("HOSTING_PUBLIC_URL", ""),
+        os.getenv("APP_URL", ""),
+        os.getenv("RENDER_EXTERNAL_URL", ""),
+        os.getenv("ONRENDER_EXTERNAL_URL", ""),
+        os.getenv("RAILWAY_STATIC_URL", ""),
+        os.getenv("PUBLIC_URL", ""),
+        os.getenv("URL", ""),
+    ]
+    koyeb_domain = str(os.getenv("KOYEB_PUBLIC_DOMAIN", "") or "").strip()
+    if koyeb_domain:
+        candidates.append(f"https://{koyeb_domain}")
+
+    for raw_value in candidates:
+        url = str(raw_value or "").strip().rstrip("/")
+        if not url:
+            continue
+        if not re.match(r"^https?://", url, flags=re.I):
+            if "." not in url or " " in url:
+                continue
+            url = f"https://{url}"
+        return url
+    return ""
+
+
+_HOSTING_PUBLIC_BASE_URL = _detect_public_base_url()
+_SELF_PING_ENABLED = _env_flag("SELF_PING_ENABLED", bool(_HOSTING_PUBLIC_BASE_URL))
+_SELF_PING_INTERVAL_SECONDS = max(60, int(str(os.getenv("SELF_PING_INTERVAL", "240") or "240").strip() or "240"))
+_SELF_PING_TIMEOUT_SECONDS = max(5, int(str(os.getenv("SELF_PING_TIMEOUT", "20") or "20").strip() or "20"))
+_self_ping_started = False
+_self_ping_lock = threading.Lock()
+
 
 class _HostingHealthHandler(BaseHTTPRequestHandler):
     def _build_payload(self):
@@ -453,6 +519,7 @@ class _HostingHealthHandler(BaseHTTPRequestHandler):
             "storage_dir": str(STORAGE_DIR),
             "storage_target_gb": STORAGE_TARGET_GB,
             "bot_worker_threads": BOT_WORKER_THREADS,
+            "public_url": _HOSTING_PUBLIC_BASE_URL,
             "time": datetime.datetime.utcnow().isoformat() + "Z",
         }
 
@@ -462,11 +529,22 @@ class _HostingHealthHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
         self.end_headers()
         if include_body:
             self.wfile.write(body)
 
     def do_GET(self):
+        path = (self.path or "/").split("?", 1)[0].strip() or "/"
+        if path in {"/", "/health", "/healthz", "/ping", "/status"}:
+            self._send_health_response(include_body=True)
+            return
+        if path == "/favicon.ico":
+            self.send_response(204)
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
         self._send_health_response(include_body=True)
 
     def do_HEAD(self):
@@ -475,10 +553,12 @@ class _HostingHealthHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         logger.info("HTTP health | " + (fmt % args))
 
+
 def _start_hosting_http_server_once() -> None:
-    """يشغّل Health Check صغير لبعض الاستضافات التي تتطلب منفذ HTTP."""
+    """يشغّل Health Check متوافق مع أغلب الاستضافات المجانية."""
     global _hosting_http_started
     if not _HOSTING_HTTP_ENABLED or _HOSTING_HTTP_PORT <= 0:
+        logger.info("ℹ️ Hosting HTTP server disabled.")
         return
     with _hosting_http_lock:
         if _hosting_http_started:
@@ -486,14 +566,23 @@ def _start_hosting_http_server_once() -> None:
         _hosting_http_started = True
 
     def _serve():
-        try:
-            server = ThreadingHTTPServer((_HOSTING_HTTP_HOST, _HOSTING_HTTP_PORT), _HostingHealthHandler)
-            logger.info(f"✅ Hosting health server listening on {_HOSTING_HTTP_HOST}:{_HOSTING_HTTP_PORT}")
-            server.serve_forever()
-        except Exception as http_err:
-            logger.exception(f"Health server failed: {http_err}")
+        candidate_ports = [_HOSTING_HTTP_PORT]
+        if not _HOSTING_HTTP_STRICT_PORT and _HOSTING_HTTP_PORT != 8080:
+            candidate_ports.append(8080)
+        bind_error = None
+        for port in candidate_ports:
+            try:
+                server = ThreadingHTTPServer((_HOSTING_HTTP_HOST, port), _HostingHealthHandler)
+                logger.info(f"✅ Hosting health server listening on {_HOSTING_HTTP_HOST}:{port}")
+                server.serve_forever()
+                return
+            except Exception as http_err:
+                bind_error = http_err
+                logger.exception(f"Health server bind failed on {_HOSTING_HTTP_HOST}:{port} | {http_err}")
+        logger.error(f"❌ Unable to start hosting health server: {bind_error}")
 
-    threading.Thread(target=_serve, daemon=True).start()
+    threading.Thread(target=_serve, daemon=True, name="hosting-http-server").start()
+
 
 _install_runtime_guardrails_once()
 
@@ -513,12 +602,47 @@ def _start_hosting_heartbeat_once() -> None:
         while True:
             try:
                 uptime_text = _get_uptime() if '_get_uptime' in globals() else 'starting'
-                logger.info(f"💓 Hosting heartbeat | uptime={uptime_text} | threads={threading.active_count()}")
+                logger.info(
+                    f"💓 Hosting heartbeat | uptime={uptime_text} | threads={threading.active_count()} | "
+                    f"http_port={_HOSTING_HTTP_PORT} | self_ping={'on' if _SELF_PING_ENABLED else 'off'}"
+                )
             except Exception as heartbeat_err:
                 logger.warning(f"Hosting heartbeat warning: {heartbeat_err}")
             time.sleep(_HOSTING_HEARTBEAT_INTERVAL_SECONDS)
 
-    threading.Thread(target=_loop, daemon=True).start()
+    threading.Thread(target=_loop, daemon=True, name="hosting-heartbeat").start()
+
+
+def _start_self_ping_once() -> None:
+    global _self_ping_started
+    if not _SELF_PING_ENABLED or not _HOSTING_PUBLIC_BASE_URL:
+        return
+    with _self_ping_lock:
+        if _self_ping_started:
+            return
+        _self_ping_started = True
+
+    def _loop():
+        session = requests.Session()
+        _mount_session_adapters(session)
+        session.headers.update({
+            "User-Agent": "TelegramBotHostingKeepAlive/1.0",
+            "Accept": "application/json,text/plain;q=0.9,*/*;q=0.8",
+            "Connection": "close",
+        })
+        ping_url = f"{_HOSTING_PUBLIC_BASE_URL}/healthz"
+        logger.info(f"🌐 Self ping enabled: {ping_url} every {_SELF_PING_INTERVAL_SECONDS}s")
+        while True:
+            started_at = time.time()
+            try:
+                response = session.get(ping_url, timeout=_SELF_PING_TIMEOUT_SECONDS, allow_redirects=True)
+                logger.info(f"🏓 Self ping -> {response.status_code} {ping_url}")
+            except Exception as ping_err:
+                logger.warning(f"Self ping warning: {ping_err}")
+            elapsed = max(0.0, time.time() - started_at)
+            time.sleep(max(5.0, _SELF_PING_INTERVAL_SECONDS - elapsed))
+
+    threading.Thread(target=_loop, daemon=True, name="hosting-self-ping").start()
 
 def _cookie_host() -> str:
     return urllib.parse.urlparse(SITE_URL).hostname or "www.ivasms.com"
@@ -562,6 +686,44 @@ def _refresh_xsrf_header(session: requests.Session):
     else:
         session.headers.pop("X-XSRF-TOKEN", None)
 
+
+def _cookie_header_from_session(session: requests.Session) -> str:
+    host = _cookie_host()
+    ordered = []
+    for cookie in session.cookies:
+        name = str(getattr(cookie, "name", "") or "").strip()
+        value = str(getattr(cookie, "value", "") or "").strip()
+        if not name or not value:
+            continue
+        if _cookie_domain_rank(getattr(cookie, "domain", ""), host) <= 0:
+            continue
+        ordered.append((
+            -_cookie_domain_rank(getattr(cookie, "domain", ""), host),
+            0 if (getattr(cookie, "path", "/") or "/") == "/" else 1,
+            name.lower(),
+            f"{name}={value}",
+        ))
+    ordered.sort()
+    return "; ".join(item[-1] for item in ordered)
+
+
+def _refresh_site_security_headers(session: requests.Session) -> None:
+    _refresh_xsrf_header(session)
+    xsrf = _pick_cookie_value(session, "XSRF-TOKEN", "XSRF_TOKEN")
+    if xsrf:
+        decoded = urllib.parse.unquote(xsrf)
+        session.headers["X-CSRF-TOKEN"] = decoded
+        session.headers["X-XSRF-TOKEN"] = decoded
+    else:
+        session.headers.pop("X-CSRF-TOKEN", None)
+        session.headers.pop("X-XSRF-TOKEN", None)
+
+    cookie_header = _cookie_header_from_session(session)
+    if cookie_header:
+        session.headers["Cookie"] = cookie_header
+    else:
+        session.headers.pop("Cookie", None)
+
 def _cookie_file_candidates() -> List[Path]:
     seen = set()
     candidates = []
@@ -593,13 +755,13 @@ def _load_cookie_items(session: requests.Session, items, source_label: str) -> b
         value = str(item.get("value") or "").strip()
         if not name or not value:
             continue
-        domain = item.get("domain") or host
-        path = item.get("path") or "/"
+        domain = str(item.get("domain") or host).strip() or host
+        path = str(item.get("path") or "/").strip() or "/"
         session.cookies.set(name, value, domain=domain, path=path)
         loaded += 1
 
     if loaded:
-        _refresh_xsrf_header(session)
+        _refresh_site_security_headers(session)
         logger.info(f"🍪 تم تحميل {loaded} كوكي من {source_label}")
         return True
     return False
@@ -634,7 +796,7 @@ def _apply_site_cookie(session: requests.Session, cookie_blob: str):
                     session.cookies.set(name, value, domain=host, path="/")
         else:
             session.cookies.set("ivas_sms_session", cookie_blob, domain=host, path="/")
-        _refresh_xsrf_header(session)
+        _refresh_site_security_headers(session)
     except Exception as cookie_err:
         logger.warning(f"SITE_COOKIE parse warning: {cookie_err}")
 
@@ -664,6 +826,130 @@ def _is_authenticated_response(resp: Optional[requests.Response]) -> bool:
     if "/portal" in final_url or "/portal/profile" in final_url:
         return True
     return (not _looks_like_guest_page(page)) and sum(marker in page for marker in auth_markers) >= 2
+
+
+def _is_cloudflare_response(resp: Optional[requests.Response]) -> bool:
+    if not resp:
+        return False
+    try:
+        status = int(getattr(resp, "status_code", 0) or 0)
+    except Exception:
+        status = 0
+    page = (getattr(resp, "text", "") or "").lower()
+    server = str(getattr(resp, "headers", {}).get("server", "") or "").lower()
+    markers = (
+        "just a moment",
+        "attention required",
+        "cf-browser-verification",
+        "challenges.cloudflare.com",
+        "cloudflare",
+    )
+    return status in {403, 429, 503} and ("cloudflare" in server or any(marker in page for marker in markers))
+
+
+def _site_session_has_auth_cookie(session: Optional[requests.Session]) -> bool:
+    if not session:
+        return False
+    return bool(_pick_cookie_value(session, "ivas_sms_session", "laravel_session", "session", "SESSION", "cf_clearance"))
+
+
+def _extract_live_my_sms_ajax_endpoints(page_html: str) -> List[Tuple[str, str]]:
+    discovered: List[Tuple[str, str]] = []
+    seen = set()
+
+    def _push(url_value: str, method: str = "post") -> None:
+        url_value = str(url_value or "").strip()
+        method = str(method or "post").strip().lower() or "post"
+        if not url_value:
+            return
+        if url_value.startswith("//"):
+            url_value = f"https:{url_value}"
+        elif url_value.startswith("/"):
+            url_value = urllib.parse.urljoin(SITE_URL, url_value)
+        elif not url_value.startswith("http"):
+            url_value = urllib.parse.urljoin(f"{SITE_URL}/", url_value.lstrip("./"))
+        if "my_sms" not in url_value:
+            return
+        key = (url_value, method)
+        if key in seen:
+            return
+        seen.add(key)
+        discovered.append(key)
+
+    defaults = [
+        (f"{SITE_URL}/portal/live/my_sms/get", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/get", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/data", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/data", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/list", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/list", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/table", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/table", "get"),
+        (f"{SITE_URL}/portal/live/my_sms/fetch", "post"),
+        (f"{SITE_URL}/portal/live/my_sms/fetch", "get"),
+    ]
+    for url_value, method in defaults:
+        _push(url_value, method)
+
+    html = str(page_html or "")
+    if not html:
+        return discovered
+
+    url_patterns = [
+        r"[\"']((?:https?:)?//[^\"']*my_sms[^\"']*)[\"']",
+        r"[\"'](/[^\"']*my_sms[^\"']*)[\"']",
+        r"(?:ajax|url|source|data-url|data-source)\\s*[:=]\\s*[\"']([^\"']*my_sms[^\"']*)[\"']",
+    ]
+    method_hints = re.findall(r"(?:type|method)\\s*[:=]\\s*[\"'](post|get)[\"']", html, flags=re.IGNORECASE)
+    preferred_method = str(method_hints[0]).lower() if method_hints else "post"
+    for pattern in url_patterns:
+        for match in re.findall(pattern, html, flags=re.IGNORECASE):
+            _push(match, preferred_method)
+            _push(match, "get")
+            _push(match, "post")
+    return discovered
+
+
+def _probe_site_connection_status() -> str:
+    try:
+        session = _build_site_session()
+    except Exception as probe_err:
+        return f"❌ {probe_err}"
+
+    has_cookie = _site_session_has_auth_cookie(session)
+    last_status = "❌ تعذر الوصول"
+    for label, url in [
+        ("my_sms", f"{SITE_URL}/portal/live/my_sms"),
+        ("portal", f"{SITE_URL}/portal"),
+        ("homepage", SITE_URL),
+    ]:
+        try:
+            resp = session.get(url, timeout=18, allow_redirects=True)
+        except Exception as page_err:
+            last_status = f"❌ {page_err}"
+            continue
+        if _is_authenticated_response(resp):
+            return f"✅ {label} ({resp.status_code})"
+        if _is_cloudflare_response(resp):
+            last_status = f"⚠️ Cloudflare ({resp.status_code})"
+        else:
+            last_status = f"⚠️ {resp.status_code}"
+
+    if has_cookie and last_status.startswith("⚠️ Cloudflare"):
+        return "⚠️ الجلسة محمّلة لكن Cloudflare منع الفحص المباشر"
+    return last_status
+
+
+def _whatsapp_connection_label(number: str, apikey: str) -> str:
+    has_number = bool(str(number or "").strip())
+    has_key = bool(str(apikey or "").strip())
+    if has_number and has_key:
+        return "✅"
+    if has_number and not has_key:
+        return "⚠️ الرقم موجود والمفتاح ناقص"
+    if has_key and not has_number:
+        return "⚠️ المفتاح موجود والرقم ناقص"
+    return "➖ غير مُفعّل"
 
 def _login_site_with_credentials(session: requests.Session) -> bool:
     """محاولة تسجيل الدخول بالبريد/كلمة المرور وتحديث الكوكيز تلقائياً."""
@@ -1931,6 +2217,57 @@ def _source_label_for_new_numbers(source: str) -> str:
     return mapping.get(normalized, normalized or 'غير معروف')
 
 
+def _broadcast_text_to_users_async(text_value: str, event_type: str, event_payload: Optional[Dict[str, Any]] = None) -> None:
+    payload = dict(event_payload or {})
+    if not str(text_value or '').strip():
+        return
+
+    recipients = list(dict.fromkeys(users_db.get("users", []))) if isinstance(users_db, dict) else []
+    if not recipients:
+        log_event(event_type, {**payload, "sent": 0, "failed": 0})
+        return
+
+    def _worker():
+        sent = failed = 0
+        for uid in recipients:
+            try:
+                _send_message_with_retry(uid, text_value)
+                sent += 1
+            except Exception as notify_err:
+                failed += 1
+                logger.debug(f"broadcast notify failed for {uid}: {notify_err}")
+        log_event(event_type, {**payload, "sent": sent, "failed": failed})
+
+    threading.Thread(target=_worker, daemon=True, name=f"notify_{event_type.lower()}").start()
+
+
+def _build_site_country_user_notification(platform: str, country_name: str, added_count: int, country_flag: str = '🌐') -> str:
+    safe_country_name = str(country_name or 'غير محددة').strip() or 'غير محددة'
+    safe_country_flag = str(country_flag or '🌐').strip() or '🌐'
+    safe_platform = _display_platform_name(platform)
+    return "\n".join([
+        "✅ تم اضافه ارقام جديده",
+        f"📱 عدد الارقام: {max(0, int(added_count or 0))}",
+        f"📂 اسم المنصه: {safe_platform}",
+        f"🌍 اسم الدوله: {safe_country_flag} {safe_country_name}",
+    ])
+
+
+def _notify_users_country_add(platform: str, country_name: str, added_count: int, country_flag: str = '🌐') -> None:
+    if int(added_count or 0) <= 0:
+        return
+    text_value = _build_site_country_user_notification(platform, country_name, added_count, country_flag=country_flag)
+    _broadcast_text_to_users_async(
+        text_value,
+        "SITE_COUNTRY_USERS_NOTIFY",
+        {
+            "count": int(added_count or 0),
+            "platform": _display_platform_name(platform),
+            "country": str(country_name or 'غير محددة').strip() or 'غير محددة',
+        },
+    )
+
+
 def _notify_users_about_new_numbers(new_items: List[Dict], source: str = "sync"):
     if not new_items:
         return
@@ -1969,16 +2306,11 @@ def _notify_users_about_new_numbers(new_items: List[Dict], source: str = "sync")
 
     lines.append("\nافتح /start أو اضغط على زر الأقسام المتاحة لاستعراضها.")
     text_value = "\n".join(lines)
-
-    sent = failed = 0
-    for uid in list(dict.fromkeys(users_db.get("users", []))):
-        try:
-            bot.send_message(uid, text_value)
-            sent += 1
-        except Exception:
-            failed += 1
-    log_event("NEW_NUMBERS_NOTIFY", {"count": len(new_items), "sent": sent, "failed": failed, "source": source})
-
+    _broadcast_text_to_users_async(
+        text_value,
+        "NEW_NUMBERS_NOTIFY",
+        {"count": len(new_items), "source": source},
+    )
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN is missing. Set it in your hosting environment variables.")
 
@@ -2176,11 +2508,11 @@ def _chunked_send(chat_id: int, text_value: str, parse_mode: str = None):
     chunk = ""
     for line in text_value.splitlines(True):
         if len(chunk) + len(line) > 3500:
-            bot.send_message(chat_id, chunk, parse_mode=parse_mode)
+            _send_message_with_retry(chat_id, chunk, parse_mode=parse_mode)
             chunk = ""
         chunk += line
     if chunk:
-        bot.send_message(chat_id, chunk, parse_mode=parse_mode)
+        _send_message_with_retry(chat_id, chunk, parse_mode=parse_mode)
 
 def _build_sections_markup() -> types.InlineKeyboardMarkup:
     mk = types.InlineKeyboardMarkup(row_width=2)
@@ -2578,22 +2910,20 @@ def download_logs(message):
         bot.reply_to(message, "📭 ملف اللوج فارغ أو غير موجود.")
 
 def check_connection(message):
-    try:
-        r = requests.get(SITE_URL, timeout=8)
-        site_ok = f"✅ {r.status_code}"
-    except Exception as e:
-        site_ok = f"❌ {e}"
+    site_ok = _probe_site_connection_status()
     try:
         me = bot.get_me()
         tg_ok = f"✅ @{me.username}"
     except Exception as e:
         tg_ok = f"❌ {e}"
+    wa_primary = _whatsapp_connection_label(WA_NUMBER_1, WA_APIKEY_1)
+    wa_backup = _whatsapp_connection_label(WA_NUMBER_2, WA_APIKEY_2)
     text = (
         f"🔎 *فحص الاتصال:*\n"
         f"🌐 الموقع: {site_ok}\n"
         f"🤖 تيليجرام: {tg_ok}\n"
-        f"📟 واتساب أساسي: {'✅' if WA_NUMBER_1 else '⚠️ غير مهيأ'}\n"
-        f"📟 واتساب احتياطي: {'✅' if WA_NUMBER_2 else '⚠️ غير مهيأ'}"
+        f"📟 واتساب أساسي: {wa_primary}\n"
+        f"📟 واتساب احتياطي: {wa_backup}"
     )
     bot.reply_to(message, text, parse_mode="Markdown")
 
@@ -2644,11 +2974,128 @@ def _build_platform_country_markup(platform: str, page: int = 0) -> types.Inline
 
 def _build_number_actions_markup() -> types.InlineKeyboardMarkup:
     mk = types.InlineKeyboardMarkup(row_width=1)
-    mk.add(types.InlineKeyboardButton("🔄 تغيير الرقم", callback_data="num_change"))
-    mk.add(types.InlineKeyboardButton("🔍 فحص الكود", callback_data="num_check"))
-    mk.add(types.InlineKeyboardButton("↩️ رجوع للدول", callback_data="num_back_countries"))
-    mk.add(types.InlineKeyboardButton("🌐 رجوع للمنصات", callback_data="num_back"))
+    mk.add(types.InlineKeyboardButton("📋 Copy Number", callback_data="num_copy"))
+    mk.add(types.InlineKeyboardButton("🔄 Change Number", callback_data="num_change"))
+    mk.add(types.InlineKeyboardButton("🌍 Change Country", callback_data="num_back_countries"))
+    if TEST_MAIN_CHANNEL_URL:
+        mk.add(types.InlineKeyboardButton("👥 Group", url=TEST_MAIN_CHANNEL_URL))
+    else:
+        mk.add(types.InlineKeyboardButton("👥 Group", callback_data="contact_dev"))
+    mk.add(types.InlineKeyboardButton("🔍 Check Code", callback_data="num_check"))
     return mk
+
+
+def _number_status_payload(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    raw_row = dict(row or {})
+    available = True
+    explicit = False
+
+    for key in ("available", "is_available", "availability", "enabled", "active"):
+        if key in raw_row:
+            available = _coerce_truthy(raw_row.get(key))
+            explicit = True
+            break
+
+    if not explicit:
+        status_value = str(raw_row.get("status") or raw_row.get("state") or raw_row.get("stock_status") or "").strip().lower()
+        if status_value:
+            explicit = True
+            if status_value in {"available", "active", "ready", "online", "ok", "in_stock", "in-stock"}:
+                available = True
+            elif status_value in {"busy", "inactive", "sold", "offline", "unavailable", "blocked", "used"}:
+                available = False
+            else:
+                available = _coerce_truthy(status_value)
+
+    if not explicit:
+        available = True
+
+    return {
+        "available": bool(available),
+        "emoji": "🟢" if available else "🔴",
+        "label": "جاهز" if available else "مستخدم/غير شغال",
+    }
+
+
+def _country_number_picker_slice(rows: List[Dict[str, Any]], start_index: int = 0, limit: int = 3) -> List[Tuple[int, Dict[str, Any]]]:
+    if not rows:
+        return []
+    total = len(rows)
+    limit = max(1, min(int(limit or 3), total))
+    start_index = int(start_index or 0) % total
+    picked: List[Tuple[int, Dict[str, Any]]] = []
+    seen = set()
+    for offset in range(total):
+        idx = (start_index + offset) % total
+        if idx in seen:
+            continue
+        seen.add(idx)
+        picked.append((idx, rows[idx]))
+        if len(picked) >= limit:
+            break
+    return picked
+
+
+def _build_country_number_picker_markup(rows: List[Dict[str, Any]], start_index: int = 0) -> types.InlineKeyboardMarkup:
+    mk = types.InlineKeyboardMarkup(row_width=1)
+    for idx, row in _country_number_picker_slice(rows, start_index=start_index, limit=3):
+        number = _normalize_number(str(row.get("number", "") or ""))
+        if not number:
+            continue
+        status = _number_status_payload(row)
+        label = f"{status['emoji']} {number}"
+        mk.add(types.InlineKeyboardButton(label, callback_data=f"num_pick_{idx}"))
+    nav_row = [types.InlineKeyboardButton("🔄 Change Number", callback_data="num_change")]
+    nav_row.append(types.InlineKeyboardButton("🌍 Change Country", callback_data="num_back_countries"))
+    mk.row(*nav_row)
+    if TEST_MAIN_CHANNEL_URL:
+        mk.add(types.InlineKeyboardButton("👥 Group", url=TEST_MAIN_CHANNEL_URL))
+    else:
+        mk.add(types.InlineKeyboardButton("👥 Group", callback_data="contact_dev"))
+    return mk
+
+
+def _format_country_numbers_picker_card(platform: str, rows: List[Dict[str, Any]], start_index: int = 0) -> str:
+    preview = _country_number_picker_slice(rows, start_index=start_index, limit=3)
+    platform_display = html.escape(str(_display_platform_name(platform or GENERAL_PLATFORM_NAME) or GENERAL_PLATFORM_NAME))
+    sample_info = (preview[0][1].get("country") if preview else {}) or _get_country_info(str(preview[0][1].get("number", "") if preview else ""))
+    country_flag = html.escape(str(sample_info.get("flag", "🌍") or "🌍"))
+    country_name = html.escape(str(sample_info.get("name", "Unknown") or "Unknown"))
+    lines = [
+        "📞 <b>اختر رقم من الأرقام المتاحة</b>",
+        "",
+        f"• 🌍 <b>Country</b> ~ {country_flag} {country_name}",
+        f"• 📲 <b>Platform</b> ~ {platform_display}",
+        f"• 🔢 <b>Total Numbers</b> ~ {len(rows)}",
+        "",
+        "🟢 <b>الأخضر</b> = جاهز وغير مستخدم",
+        "🔴 <b>الأحمر</b> = مستخدم أو غير شغال",
+        "",
+        "<b>الأرقام المعروضة حالياً:</b>",
+    ]
+    for _, row in preview:
+        number = html.escape(str(_normalize_number(str(row.get("number", "") or ""))))
+        status = _number_status_payload(row)
+        lines.append(f"{status['emoji']} <code>{number}</code> — {status['label']}")
+    if len(rows) > len(preview):
+        lines.extend(["", "اضغط <b>Change Number</b> لعرض 3 أرقام تانية من نفس الدولة."])
+    return "\n".join(lines)
+
+
+def _format_assigned_number_card(number: str, platform: str, country_info: Optional[Dict[str, Any]] = None) -> str:
+    info = dict(country_info or _get_country_info(number) or {})
+    number_html = html.escape(str(number or ""))
+    country_flag = html.escape(str(info.get("flag", "🌍") or "🌍"))
+    country_name = html.escape(str(info.get("name", "Unknown") or "Unknown"))
+    platform_display = html.escape(str(_display_platform_name(platform or GENERAL_PLATFORM_NAME) or GENERAL_PLATFORM_NAME))
+    return (
+        "🟢 <b>Number Successfully Assigned!</b>\n\n"
+        f"• 🧠 <b>Number</b> ~ <code>{number_html}</code>\n"
+        f"• 🌍 <b>Country</b> ~ {country_flag} {country_name}\n"
+        f"• 📲 <b>Platform</b> ~ {platform_display}\n\n"
+        "📡 ~&gt; <b>Waiting For OTP..</b> 🧠\n\n"
+        "🟢 <b>Number Is Active!</b>"
+    )
 
 
 def _selected_user_platform(state: Optional[Dict]) -> str:
@@ -2732,7 +3179,31 @@ def _render_user_number_card(chat_id: int, user_id: int, message_id: Optional[in
         _render_user_number_card(chat_id, user_id, message_id=message_id)
         return
 
-    index = int(state.get("index", 0)) % len(avail)
+    selected_number = _normalize_number(str(state.get("number", "") or ""))
+    selected_index = -1
+    if selected_number:
+        for row_index, row in enumerate(avail):
+            if _normalize_number(str(row.get("number", "") or "")) == selected_number:
+                selected_index = row_index
+                break
+
+    if selected_index < 0:
+        index = int(state.get("index", 0)) % len(avail)
+        state["index"] = index
+        state["platform"] = platform
+        state.pop("number", None)
+        user_number_state[user_id] = state
+        _clear_auto_code_watch(user_id)
+        text = _format_country_numbers_picker_card(platform, avail, start_index=index)
+        return _send_or_edit(
+            chat_id,
+            text,
+            reply_markup=_build_country_number_picker_markup(avail, start_index=index),
+            message_id=message_id,
+            parse_mode="HTML",
+        )
+
+    index = selected_index
     state["index"] = index
     state["platform"] = platform
     state["number"] = avail[index]["number"]
@@ -2740,17 +3211,7 @@ def _render_user_number_card(chat_id: int, user_id: int, message_id: Optional[in
 
     country_info = avail[index].get("country") or _get_country_info(avail[index]["number"])
     _set_auto_code_watch(chat_id, user_id, avail[index]["number"], platform, country_info=country_info)
-    country_name = html.escape(str(country_info.get("name", "غير محددة") or "غير محددة"))
-    code_digits = html.escape(str(country_info.get("code", "") or ""))
-    code_text = f" ({code_digits})" if code_digits else ""
-    number_html = html.escape(str(avail[index].get("number", "") or ""))
-    text = (
-        f"📱 <b>القسم:</b> {platform_display}\n"
-        f"🌍 <b>الدولة:</b> {country_info.get('flag', '🌐')} {country_name}{code_text}\n"
-        f"🔢 <b>الرقم الحالي:</b>\n<code>{number_html}</code>\n\n"
-        f"📦 <b>ترتيب الرقم داخل الدولة:</b> {index + 1} من {len(avail)}\n"
-        "استخدم الأزرار اللي تحت لتغيير الرقم أو فحص آخر كود."
-    )
+    text = _format_assigned_number_card(avail[index].get("number", ""), platform, country_info=country_info)
     return _send_or_edit(
         chat_id,
         text,
@@ -2835,11 +3296,53 @@ def platform_country_callback(call):
     state["country_key"] = country_key
     state["index"] = 0
     state.pop("number", None)
+    _clear_auto_code_watch(call.from_user.id)
     state['_country_rows_platform'] = _normalize_platform(platform)
     state['_country_rows_key'] = country_key
     state['_country_rows'] = [dict(item) for item in avail]
     user_number_state[call.from_user.id] = state
-    bot.answer_callback_query(call.id, "✅ تم فتح الدولة")
+    bot.answer_callback_query(call.id, "✅ تم فتح الدولة وعرض 3 أرقام")
+    _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+
+
+def number_pick_callback(call):
+    state = user_number_state.get(call.from_user.id) or {}
+    platform = _selected_user_platform(state)
+    country_key = str(state.get("country_key", "")).strip()
+    if not platform or not country_key:
+        bot.answer_callback_query(call.id, "اختر الدولة أولاً", show_alert=True)
+        _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+        return
+
+    avail = _state_country_rows(state, platform, country_key)
+    if not avail:
+        state.pop("country_key", None)
+        state["index"] = 0
+        state.pop("number", None)
+        _reset_state_country_rows(state)
+        user_number_state[call.from_user.id] = state
+        bot.answer_callback_query(call.id, "لا توجد أرقام داخل هذه الدولة حالياً", show_alert=True)
+        _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+        return
+
+    try:
+        index = int(call.data.replace("num_pick_", "", 1).strip() or "0")
+    except Exception:
+        index = 0
+    index = max(0, min(index, len(avail) - 1))
+    row = avail[index]
+    status = _number_status_payload(row)
+    state["index"] = index
+    if not status["available"]:
+        state.pop("number", None)
+        user_number_state[call.from_user.id] = state
+        bot.answer_callback_query(call.id, "❌ الرقم ده مستخدم أو غير شغال حالياً", show_alert=True)
+        _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+        return
+
+    state["number"] = row.get("number", "")
+    user_number_state[call.from_user.id] = state
+    bot.answer_callback_query(call.id, "✅ تم اختيار الرقم")
     _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
 
 
@@ -2860,13 +3363,17 @@ def number_change_callback(call):
         bot.answer_callback_query(call.id, "لا توجد أرقام داخل هذه الدولة حالياً", show_alert=True)
         state.pop("country_key", None)
         state["index"] = 0
+        state.pop("number", None)
         _reset_state_country_rows(state)
         user_number_state[call.from_user.id] = state
         _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
         return
-    state["index"] = (int(state.get("index", 0)) + 1) % len(avail)
+    step = 3 if len(avail) > 3 else 1
+    state["index"] = (int(state.get("index", 0)) + step) % len(avail)
+    state.pop("number", None)
+    _clear_auto_code_watch(call.from_user.id)
     user_number_state[call.from_user.id] = state
-    bot.answer_callback_query(call.id, "✅ تم تغيير الرقم")
+    bot.answer_callback_query(call.id, "✅ تم عرض 3 أرقام جديدة")
     _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
 
 
@@ -2894,134 +3401,73 @@ def number_back_callback(call):
     bot.answer_callback_query(call.id)
     _send_demo_home(call.message.chat.id, message_id=call.message.message_id)
 
-def number_check_callback(call):
-    """
-    يفحص آخر كود للرقم المختار.
-    - يعمل في خيط منفصل لعدم تجميد البوت
-    - ينتظر فترة قصيرة لمتابعة وصول الكود مباشرة بعد تفعيل الرقم
-    - يعرض الكود بصيغة HTML آمنة لتجنب انهيار الرسائل بسبب Markdown
-    - يُسجّل الكود في القناة تلقائياً
-    """
-    state = user_number_state.get(call.from_user.id) or {}
-    number = _normalize_number(state.get("number", ""))
-    platform = _selected_user_platform(state) or GENERAL_PLATFORM_NAME
-    country_info = _get_country_info(number) if number else {"name": "غير محددة", "flag": "🌐"}
 
+def _build_retry_check_code_markup() -> types.InlineKeyboardMarkup:
+    return _build_number_actions_markup()
+
+
+def number_copy_callback(call):
+    state = user_number_state.get(call.from_user.id) or {}
+    number = _normalize_number(str(state.get("number", "") or ""))
     if not number:
-        bot.answer_callback_query(call.id, "اختر الدولة ثم الرقم أولاً", show_alert=True)
+        bot.answer_callback_query(call.id, "لا يوجد رقم ظاهر حالياً.", show_alert=True)
+        return
+    try:
+        bot.answer_callback_query(call.id, "تم تجهيز الرقم للنسخ ✅")
+    except Exception:
+        pass
+    try:
+        _send_message_with_retry(
+            call.message.chat.id,
+            f"📋 <b>Copy Number</b>\n<code>{html.escape(number)}</code>",
+            parse_mode="HTML",
+        )
+    except Exception:
+        pass
+
+
+def number_check_callback(call):
+    watch = _get_auto_code_watch(call.from_user.id)
+    if not watch:
+        bot.answer_callback_query(call.id, "لا يوجد رقم مفعّل حالياً لفحصه.", show_alert=True)
+        try:
+            _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+        except Exception:
+            pass
         return
 
-    bot.answer_callback_query(call.id, "⏳ جاري متابعة وصول الكود...")
-    chat_id = call.message.chat.id
-
-    def _do_fetch():
-        wait_message = None
+    bot.answer_callback_query(call.id, "جاري فحص الكود الآن…", show_alert=False)
+    delivered = _deliver_latest_code_to_watch(watch, manual_trigger=True)
+    if not delivered:
         try:
-            max_attempts = max(20, int(str(_get("CHECK_CODE_ATTEMPTS", "60") or "60").strip() or "60"))
-            delay_seconds = max(0.35, float(str(_get("CHECK_CODE_DELAY_SECONDS", "0.35") or "0.35").strip() or "0.35"))
-            total_wait = int(max_attempts * delay_seconds)
-            number_html = html.escape(number)
-            try:
-                wait_message = bot.send_message(
-                    chat_id,
-                    f"⏳ جاري متابعة الرقم <code>{number_html}</code> لمدة تقريبية {total_wait} ثانية أو حتى وصول الكود.",
-                    parse_mode="HTML",
-                )
-            except Exception:
-                wait_message = None
+            fresh_payload = _fetch_latest_live_code_for_number(
+                _normalize_number(watch.get("number", "")),
+                _normalize_platform(watch.get("platform", "") or GENERAL_PLATFORM_NAME),
+            ) or {}
+            if fresh_payload:
+                delivered = _deliver_latest_code_to_watch(watch, fetched_payload=fresh_payload, manual_trigger=True)
+        except Exception as live_fetch_err:
+            logger.debug(f"num_check live retry failed: {live_fetch_err}")
 
-            data = None
-            for attempt in range(max_attempts):
-                data = _fetch_latest_sms_for_number(number, platform)
-                code_value = str((data or {}).get("code") or "").strip()
-                if data and code_value and code_value != "غير متوفر":
-                    break
-                data = None
-                if attempt < max_attempts - 1:
-                    time.sleep(delay_seconds)
+    if delivered:
+        try:
+            bot.send_message(call.message.chat.id, "✅ تم فحص الرقم وإرسال الكود بنجاح لو كان متاحاً.")
+        except Exception:
+            pass
+        return
 
-            if wait_message is not None:
-                try:
-                    bot.delete_message(chat_id, wait_message.message_id)
-                except Exception:
-                    pass
-
-            country_name = html.escape(str(country_info.get('name', 'غير محددة') or 'غير محددة'))
-            platform_name = html.escape(_display_platform_name(platform))
-            if not data:
-                bot.send_message(
-                    chat_id,
-                    (
-                        "🔍 <b>فحص الكود</b>\n\n"
-                        f"📂 القسم: {platform_name}\n"
-                        f"🌍 الدولة: {country_info.get('flag','🌐')} {country_name}\n"
-                        f"📱 الرقم: <code>{number_html}</code>\n\n"
-                        "❌ لم يصل كود خلال فترة المتابعة الحالية. جرّب مرة ثانية بعد لحظات."
-                    ),
-                    parse_mode="HTML",
-                )
-                return
-
-            sms_text = (data.get("text") or data.get("message") or "").strip()
-            code = str(data.get("code") or "").strip() or "غير متوفر"
-            received_at = str(data.get("date") or data.get("created_at") or data.get("time") or "غير محدد")
-            source_name = str(data.get("source") or "").strip()
-            detected_platform = _normalize_platform(data.get("platform") or data.get("service") or platform or GENERAL_PLATFORM_NAME)
-            _cache_code_for_number(number, detected_platform or platform, data)
-            _mark_auto_code_watch_seen(call.from_user.id, number, code)
-
-            reply = (
-                "🔍 <b>نتيجة فحص الكود</b>\n\n"
-                f"📂 القسم: {html.escape(_display_platform_name(detected_platform or platform))}\n"
-                f"🌍 الدولة: {country_info.get('flag','🌐')} {country_name}\n"
-                f"📱 الرقم: <code>{number_html}</code>\n"
-                f"🔐 <b>الكود:</b> <code>{html.escape(code)}</code>\n"
-                f"🕐 الوقت: {html.escape(received_at)}"
-            )
-            if source_name:
-                reply += f"\n📡 المصدر: {html.escape(source_name)}"
-            if sms_text:
-                reply += f"\n\n📩 <b>نص الرسالة:</b>\n{html.escape(sms_text[:1000])}"
-
-            bot.send_message(chat_id, reply + "\n\n🗑️ <b>سيتم حذف الرقم تلقائياً من البوت بعد إرسال الكود للحماية.</b>", parse_mode="HTML")
-            _notify_code_to_channel(
-                number,
-                detected_platform or platform,
-                code,
-                country_info=country_info,
-                received_at=received_at,
-                sms_text=sms_text,
-            )
-            removed_count = _remove_number_from_storage(number)
-            state_after = user_number_state.get(call.from_user.id) or {}
-            cached_rows = [
-                dict(item) for item in list(state_after.get('_country_rows') or [])
-                if _normalize_number(item.get('number', '')) != number
-            ]
-            if cached_rows:
-                state_after['_country_rows'] = cached_rows
-            else:
-                state_after.pop('country_key', None)
-                _reset_state_country_rows(state_after)
-            state_after.pop('number', None)
-            state_after['index'] = 0
-            user_number_state[call.from_user.id] = state_after
-            _clear_auto_code_watch(call.from_user.id)
-            if removed_count > 0:
-                logger.info(f"🗑️ تم حذف الرقم {number} تلقائياً بعد إرسال الكود للمستخدم {call.from_user.id}")
-        except Exception as check_err:
-            logger.warning(f"number_check_callback error ({number}): {check_err}")
-            try:
-                if wait_message is not None:
-                    try:
-                        bot.delete_message(chat_id, wait_message.message_id)
-                    except Exception:
-                        pass
-                bot.send_message(chat_id, f"⚠️ حدث خطأ أثناء جلب الكود: {check_err}")
-            except Exception:
-                pass
-
-    threading.Thread(target=_do_fetch, daemon=True).start()
+    try:
+        bot.answer_callback_query(
+            call.id,
+            "⏳ لسه مفيش كود جديد. أول ما يوصل هيتبعت لك تلقائياً، وتقدر تضغط Check Code تاني في أي وقت.",
+            show_alert=True,
+        )
+    except Exception:
+        pass
+    try:
+        _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+    except Exception:
+        pass
 
 
 def support_handler(message):
@@ -3335,18 +3781,53 @@ def _platform_exists(platform):
 
 pending_activation = {}
 
-AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", False)
+# تفعيل المراقبة التلقائية افتراضياً حتى يصل الكود للمستخدم بدون الحاجة لضبط متغير بيئة إضافي.
+AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", True)
 AUTO_CODE_WATCH_INTERVAL_SECONDS = max(10.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "15.0") or "15.0").strip() or "15.0"))
 AUTO_CODE_WATCH_TTL_SECONDS = max(600, int(str(_get("AUTO_CODE_WATCH_TTL_SECONDS", "1800") or "1800").strip() or "1800"))
+TG_SEND_MAX_RETRIES = max(1, int(str(_get("TG_SEND_MAX_RETRIES", "4") or "4").strip() or "4"))
+TG_SEND_BASE_DELAY_SECONDS = max(1.0, float(str(_get("TG_SEND_BASE_DELAY_SECONDS", "2.0") or "2.0").strip() or "2.0"))
+PRIVATE_DELIVERY_HEALTHCHECK_ENABLED = _env_flag("PRIVATE_DELIVERY_HEALTHCHECK_ENABLED", True)
+PRIVATE_DELIVERY_HEALTHCHECK_INTERVAL_SECONDS = max(30, int(str(_get("PRIVATE_DELIVERY_HEALTHCHECK_INTERVAL_SECONDS", "60") or "60").strip() or "60"))
 _auto_code_watch_started = False
 _auto_code_watch_lock = threading.Lock()
 _auto_code_watchers: Dict[int, Dict[str, Any]] = {}
+_private_delivery_healthcheck_started = False
+_private_delivery_failure_lock = threading.Lock()
+_private_delivery_failures: Dict[int, Dict[str, Any]] = {}
 
 
 def _clear_auto_code_watch(user_id: int) -> None:
     with _auto_code_watch_lock:
         _auto_code_watchers.pop(int(user_id), None)
 
+
+def _finalize_delivered_number_for_user(user_id: int, number: str) -> None:
+    normalized_number = _normalize_number(number)
+    if not normalized_number:
+        return
+    try:
+        _remove_number_from_storage(normalized_number)
+    except Exception as remove_err:
+        logger.warning(f"AUTO_CODE_WATCH cleanup remove error for {normalized_number}: {remove_err}")
+    try:
+        state_after = user_number_state.get(int(user_id)) or {}
+        cached_rows = [
+            dict(item) for item in list(state_after.get('_country_rows') or [])
+            if _normalize_number(item.get('number', '')) != normalized_number
+        ]
+        if cached_rows:
+            state_after['_country_rows'] = cached_rows
+        else:
+            state_after.pop('country_key', None)
+            _reset_state_country_rows(state_after)
+        if _normalize_number(state_after.get('number', '')) == normalized_number:
+            state_after.pop('number', None)
+        state_after['index'] = 0
+        user_number_state[int(user_id)] = state_after
+    except Exception as state_err:
+        logger.warning(f"AUTO_CODE_WATCH cleanup state error for {normalized_number}: {state_err}")
+    _clear_auto_code_watch(int(user_id))
 
 
 def _mark_auto_code_watch_seen(user_id: int, number: str, code: str) -> None:
@@ -3363,6 +3844,241 @@ def _mark_auto_code_watch_seen(user_id: int, number: str, code: str) -> None:
         watch["last_seen_code"] = normalized_code
         watch["updated_at"] = time.time()
 
+
+def _get_auto_code_watch(user_id: int) -> Optional[Dict[str, Any]]:
+    with _auto_code_watch_lock:
+        watch = _auto_code_watchers.get(int(user_id))
+        return dict(watch) if isinstance(watch, dict) else None
+
+
+def _strip_telegram_html(text_value: str) -> str:
+    value = str(text_value or "")
+    value = re.sub(r"<\s*br\s*/?\s*>", "\n", value, flags=re.IGNORECASE)
+    value = re.sub(r"<\s*/p\s*>", "\n", value, flags=re.IGNORECASE)
+    value = re.sub(r"<[^>]+>", "", value)
+    return html.unescape(value)
+
+
+def _extract_telegram_retry_after(exc: Exception) -> float:
+    err_text = str(exc or "")
+    match = re.search(r"retry after[: ]+(\d+)", err_text, flags=re.IGNORECASE)
+    if match:
+        try:
+            return max(1.0, float(match.group(1)))
+        except Exception:
+            return TG_SEND_BASE_DELAY_SECONDS
+    return 0.0
+
+
+def _send_message_with_retry(
+    chat_id: int,
+    text_value: str,
+    parse_mode: Optional[str] = None,
+    reply_markup: Optional[Any] = None,
+    disable_web_page_preview: bool = True,
+) -> bool:
+    payload = str(text_value or "").strip()
+    if not payload:
+        return False
+
+    if len(payload) > 3500:
+        current_chunk = ""
+        chunks: List[str] = []
+        for line in payload.splitlines(True):
+            if len(current_chunk) + len(line) > 3500:
+                if current_chunk:
+                    chunks.append(current_chunk)
+                current_chunk = line
+            else:
+                current_chunk += line
+        if current_chunk:
+            chunks.append(current_chunk)
+        if not chunks:
+            chunks = [payload[i:i + 3500] for i in range(0, len(payload), 3500)]
+        for idx, chunk in enumerate(chunks):
+            _send_message_with_retry(
+                chat_id,
+                chunk,
+                parse_mode=parse_mode,
+                reply_markup=reply_markup if idx == len(chunks) - 1 else None,
+                disable_web_page_preview=disable_web_page_preview,
+            )
+        return True
+
+    last_error: Optional[Exception] = None
+    normalized_parse_mode = str(parse_mode or "").strip() or None
+    payload_variants: List[Tuple[str, Optional[str]]] = [(payload, normalized_parse_mode)]
+    if normalized_parse_mode:
+        payload_variants.append((_strip_telegram_html(payload), None))
+
+    for attempt in range(1, TG_SEND_MAX_RETRIES + 1):
+        for variant_text, variant_parse_mode in payload_variants:
+            try:
+                bot.send_message(
+                    chat_id,
+                    variant_text,
+                    parse_mode=variant_parse_mode,
+                    reply_markup=reply_markup,
+                    disable_web_page_preview=disable_web_page_preview,
+                )
+                return True
+            except Exception as send_err:
+                last_error = send_err
+                err_text = str(send_err or "").lower()
+                is_parse_error = any(token in err_text for token in [
+                    "can't parse entities",
+                    "cant parse entities",
+                    "parse entities",
+                    "unsupported start tag",
+                    "unsupported end tag",
+                    "wrong entity",
+                ])
+                if variant_parse_mode and is_parse_error:
+                    continue
+                is_permanent = any(token in err_text for token in [
+                    "chat not found",
+                    "bot was blocked by the user",
+                    "user is deactivated",
+                    "have no rights to send a message",
+                    "forbidden: bot can't initiate conversation",
+                ])
+                if is_permanent:
+                    raise
+                if attempt >= TG_SEND_MAX_RETRIES:
+                    raise
+                wait_seconds = _extract_telegram_retry_after(send_err) or min(20.0, TG_SEND_BASE_DELAY_SECONDS * attempt)
+                time.sleep(wait_seconds)
+                break
+    if last_error:
+        raise last_error
+    return False
+
+
+def _record_private_delivery_failure(watch: Dict[str, Any], reason: str, code_value: str = "") -> None:
+    user_id = int(watch.get("user_id") or 0)
+    if not user_id:
+        return
+    with _private_delivery_failure_lock:
+        current = dict(_private_delivery_failures.get(user_id) or {})
+        current.update({
+            "user_id": user_id,
+            "chat_id": int(watch.get("chat_id") or 0),
+            "number": _normalize_number(watch.get("number", "")),
+            "platform": _normalize_platform(watch.get("platform", "") or GENERAL_PLATFORM_NAME),
+            "country_info": dict(watch.get("country_info") or {}),
+            "last_error": str(reason or "غير معروف"),
+            "code": str(code_value or current.get("code") or "").strip(),
+            "updated_at": time.time(),
+            "attempts": int(current.get("attempts") or 0) + 1,
+        })
+        _private_delivery_failures[user_id] = current
+
+
+def _clear_private_delivery_failure(user_id: int) -> None:
+    with _private_delivery_failure_lock:
+        _private_delivery_failures.pop(int(user_id), None)
+
+
+def _build_auto_code_delivery_message(number: str, detected_platform: str, info: Dict[str, Any], code_value: str, received_at: str, sms_text: str = "") -> str:
+    reply = (
+        "⚡ <b>وصل كود جديد تلقائياً</b>\n\n"
+        f"📂 القسم: {html.escape(str(detected_platform or GENERAL_PLATFORM_NAME))}\n"
+        f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
+        f"📱 الرقم: <code>{html.escape(str(number))}</code>\n"
+        f"🔐 <b>الكود:</b> <code>{html.escape(str(code_value))}</code>\n"
+        f"🕐 الوقت: {html.escape(str(received_at))}"
+    )
+    if sms_text:
+        reply += f"\n\n📩 <b>نص الرسالة:</b>\n{html.escape(str(sms_text)[:1000])}"
+    return reply
+
+
+def _deliver_latest_code_to_watch(watch: Dict[str, Any], fetched_payload: Optional[Dict[str, Any]] = None, manual_trigger: bool = False) -> bool:
+    watch_data = dict(watch or {})
+    user_id = int(watch_data.get("user_id") or 0)
+    chat_id = int(watch_data.get("chat_id") or 0)
+    number = _normalize_number(watch_data.get("number", ""))
+    platform = _normalize_platform(watch_data.get("platform", "") or GENERAL_PLATFORM_NAME)
+    if not user_id or not chat_id or not number:
+        return False
+
+    data = dict(fetched_payload or {}) if isinstance(fetched_payload, dict) else {}
+    if not data:
+        try:
+            data = _fetch_latest_sms_for_number(number, platform) or {}
+        except Exception as fetch_err:
+            _record_private_delivery_failure(watch_data, f"fetch_failed: {fetch_err}")
+            logger.warning(f"AUTO_CODE_WATCH fetch retry failed for {number}: {fetch_err}")
+            return False
+
+    code_value = str((data or {}).get("code") or "").strip()
+    if not data or not code_value or code_value == "غير متوفر":
+        return False
+
+    if not manual_trigger and code_value == str(watch_data.get("last_seen_code") or "").strip():
+        return False
+
+    sms_text = str((data or {}).get("text") or (data or {}).get("message") or "").strip()
+    received_at = str((data or {}).get("date") or (data or {}).get("created_at") or (data or {}).get("time") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
+    detected_platform = _normalize_platform((data or {}).get("platform") or (data or {}).get("service") or platform or GENERAL_PLATFORM_NAME)
+    info = dict(watch_data.get("country_info") or _get_country_info(number) or {})
+    try:
+        _notify_code_to_channel(
+            number,
+            detected_platform,
+            code_value,
+            country_info=info,
+            received_at=received_at,
+            sms_text=sms_text,
+        )
+        try:
+            _send_message_with_retry(
+                chat_id,
+                "✅ تم إرسال الكود إلى القناة الرسمية فقط: @fz_z_Z",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+        _cache_code_for_number(number, detected_platform, data)
+        _mark_auto_code_watch_seen(user_id, number, code_value)
+        _finalize_delivered_number_for_user(user_id, number)
+        _clear_private_delivery_failure(user_id)
+        logger.info(f"⚡ [AUTO-WATCH] تم إرسال الكود إلى القناة فقط {'يدوياً' if manual_trigger else 'تلقائياً'} للرقم {number}")
+        return True
+    except Exception as delivery_err:
+        _record_private_delivery_failure(watch_data, str(delivery_err), code_value=code_value)
+        logger.warning(f"AUTO_CODE_WATCH channel-only send error for {number}: {delivery_err}")
+        return False
+
+
+def _private_delivery_healthcheck_loop() -> None:
+    while True:
+        time.sleep(PRIVATE_DELIVERY_HEALTHCHECK_INTERVAL_SECONDS)
+        try:
+            with _private_delivery_failure_lock:
+                failed_user_ids = list(_private_delivery_failures.keys())
+            if not failed_user_ids:
+                continue
+            for user_id in failed_user_ids:
+                watch = _get_auto_code_watch(user_id)
+                if not watch:
+                    _clear_private_delivery_failure(user_id)
+                    continue
+                _deliver_latest_code_to_watch(watch, manual_trigger=True)
+        except Exception as healthcheck_err:
+            logger.warning(f"PRIVATE_DELIVERY_HEALTHCHECK warning: {healthcheck_err}")
+
+
+def _start_private_delivery_healthcheck_once() -> None:
+    global _private_delivery_healthcheck_started
+    if _private_delivery_healthcheck_started:
+        return
+    if not PRIVATE_DELIVERY_HEALTHCHECK_ENABLED:
+        logger.info("⏸️ فحص وصول الأكواد الخاص معطّل عبر الإعدادات.")
+        return
+    _private_delivery_healthcheck_started = True
+    threading.Thread(target=_private_delivery_healthcheck_loop, daemon=True).start()
+    logger.info(f"✅ تم تشغيل فحص وصول الأكواد الخاص كل {PRIVATE_DELIVERY_HEALTHCHECK_INTERVAL_SECONDS} ثانية")
 
 
 def _set_auto_code_watch(chat_id: int, user_id: int, number: str, platform: str, country_info: Optional[Dict] = None) -> None:
@@ -3384,7 +4100,7 @@ def _set_auto_code_watch(chat_id: int, user_id: int, number: str, platform: str,
             "platform": normalized_platform,
             "country_info": info,
             "last_seen_code": baseline_code,
-            "skip_initial_fetch": not bool(baseline_code),
+            "skip_initial_fetch": False,
             "updated_at": time.time(),
         }
 
@@ -3443,45 +4159,7 @@ def _auto_code_watch_loop():
                 _cache_code_for_number(number, detected_platform, data)
 
                 for watch in watch_group:
-                    if bool(watch.get("skip_initial_fetch")):
-                        try:
-                            with _auto_code_watch_lock:
-                                current = _auto_code_watchers.get(int(watch.get("user_id") or 0))
-                                if current and _normalize_number(current.get("number", "")) == number and _normalize_platform(current.get("platform", "")) == platform:
-                                    current["last_seen_code"] = code_value
-                                    current["skip_initial_fetch"] = False
-                                    current["updated_at"] = time.time()
-                        except Exception:
-                            pass
-                        continue
-                    if code_value == str(watch.get("last_seen_code") or "").strip():
-                        continue
-                    info = dict(watch.get("country_info") or _get_country_info(number) or {})
-                    reply = (
-                        "⚡ *وصل كود جديد تلقائياً*\n\n"
-                        f"📂 القسم: {detected_platform}\n"
-                        f"🌍 الدولة: {info.get('flag', '🌐')} {info.get('name', 'غير محددة')}\n"
-                        f"📱 الرقم: `{number}`\n"
-                        f"🔐 *الكود: `{code_value}`*\n"
-                        f"🕐 الوقت: {received_at}"
-                    )
-                    if sms_text:
-                        reply += f"\n\n📩 *نص الرسالة:*\n{sms_text[:1000]}"
-
-                    try:
-                        bot.send_message(int(watch.get("chat_id")), reply, parse_mode="Markdown")
-                        _notify_code_to_channel(
-                            number,
-                            detected_platform,
-                            code_value,
-                            country_info=info,
-                            received_at=received_at,
-                            sms_text=sms_text,
-                        )
-                        _mark_auto_code_watch_seen(int(watch.get("user_id")), number, code_value)
-                        logger.info(f"⚡ [AUTO-WATCH] تم إرسال الكود تلقائياً للرقم {number}")
-                    except Exception as auto_watch_err:
-                        logger.warning(f"AUTO_CODE_WATCH send error for {number}: {auto_watch_err}")
+                    _deliver_latest_code_to_watch(watch, fetched_payload=data)
         except Exception as auto_watch_loop_err:
             logger.warning(f"AUTO_CODE_WATCH loop error: {auto_watch_loop_err}")
 
@@ -4360,36 +5038,26 @@ def delete_platform_command(message):
 EMBEDDED_SITE_COOKIES = [
     {
         "name": "ivas_sms_session",
-        "value": "eyJpdiI6InpselpOOHhuaWRVVG5xNm1iMWc2Y2c9PSIsInZhbHVlIjoib29sWm83VUcxbjRrL29ucXd5YVlINklNT1NiLzU4WlhCSjNyZkZIcnFuaWZSektkQlJqSGhlTFBGOGJocVFGa1lscHJML1hwRlNuWStQYnczV2RLU3FIZmFSY1dUZDh6N2I5cWRuKzM0TXYyTWE2Q2xmeWMvMFhOamlpejBySFMiLCJtYWMiOiJhNjhmMmY1Y2ZkNWNiOTEzM2ZjZmMwOGI0YjcwYmNlNDQ0YmViODc1ZTgxZDA4YmYzNjkwMmE4N2RiMDBhOGY3IiwidGFnIjoiIn0%3D",
+        "value": "eyJpdiI6InIzRkw2UVNkdjcyK2Z5Mk1UVWhIUHc9PSIsInZhbHVlIjoiQlc3OERhWkUrYmUrbWlLNXR6QjBiMVdETWNxeC9lVzIvbHNQaVE2R2duOEJEY0VhSzhrSUM0cW1XMTJVR0VCMkJpM3dJTkhXNkwzaXkyckwwYXpvaUdrblBYMmtIYllReXVMY2JGZjlLTVNMa0l1WkxDZVp5YzZocUJrZmtER0EiLCJtYWMiOiJiYzI5NTA0MWY4Mjg0ZTY5MDU0NTZiMmQ2MDgxMGYyM2E3ZjVkNzliYTlmNDJlZjI5YWI1YzI3YjdlYTFmMGEzIiwidGFnIjoiIn0%3D",
         "domain": "www.ivasms.com",
         "path": "/",
-        "expires": 1776694653.951559,
+        "expires": 1779472200.636235,
         "httpOnly": True,
         "secure": False,
         "sameSite": "lax",
-        "origin": "https://www.ivasms.com"
+        "origin": "https://www.ivasms.com",
     },
     {
         "name": "XSRF-TOKEN",
-        "value": "eyJpdiI6IlpEWnlpd2VUaHlaMUhIRzlxRUNFZ3c9PSIsInZhbHVlIjoiWnpHS21DTTFMYjNQRHVySnAzakRmZUN5eWpCL2FPcEE2LytEeWtadFQrZ3MwK0hBeFczcGlCQ0dueUdLZnRRVmRvb0FpZ0ltNGlYUzBDQzVFOHFKdkpDMnd4eWlUcCtSOThBYXFkUGtSTmJuU0ZxYUxqNHJidi9jd0tuN0p4cjEiLCJtYWMiOiJiNjUwZDU5ZmJkOTEyNGE4YmQ4YTBjNzgxNTBlNzY1NWFkYmVkZGJiNjg5NmQwY2I1NmRmMDg1OWI2ZjE2ZjFhIiwidGFnIjoiIn0%3D",
-        "domain": ".www.ivasms.com",
-        "path": "/",
-        "httpOnly": False,
-        "secure": False,
-        "sameSite": "unspecified",
-        "origin": "https://www.ivasms.com"
-    },
-    {
-        "name": "XSRF-TOKEN",
-        "value": "eyJpdiI6IlBYOWFnK0o3VUs2ZFFpZ1FQQ0VxOUE9PSIsInZhbHVlIjoidjJIa1VvV2Vkbi91cXB1ZjFCU0xvbzkyejB0YWJkaGhVOXRPZkVjanJ2alhtYUJqZTRyRXFoLzZFeThOTkljOTU3U1drK3BSWUpBVVByWVFYTStvVDNJYjF0SDBrWmtrSXQ3NmtmMnpHcWpEUlgzczdIaHpJVlpaU1pmdzlQRWkiLCJtYWMiOiJmMDE0MDJmMmUxNzQzNDY3N2M3NTQyMWIwYzRjZWFlZTAzMjQ0MTZkNGRiYzM0MzA2MTI2MTEzODM1MmIzY2Y2IiwidGFnIjoiIn0%3D",
+        "value": "eyJpdiI6IlgyQzhvWWlZa3h3ckRaMDljY3hlZ1E9PSIsInZhbHVlIjoiUDBLVEVlK3JjRnFMbU5nVTBaZEQ3UXpXUWJiMVRZbEtnVHk3WkN6Mmx2VDAzOXNxQXlFWjFIMjdBWk9CeENyMk1LNUQ1enNMTzlHaW1JQjhDNlNnWk40dUJSVWt4UXpUTE5YZk1rZFMyQjVIdllxUnNvVnY0aGtGNFdhblhvc3QiLCJtYWMiOiI1Y2ViMWM4OWJlNzI3MGNjNGY0MGM5NGI5NGU3ODM0NjU2ZGY5Y2QzMzNhNWFkNmVkM2JjZjNkOTc1YjM2OGY0IiwidGFnIjoiIn0%3D",
         "domain": "www.ivasms.com",
         "path": "/",
-        "expires": 1776694653.951353,
+        "expires": 1779472200.636071,
         "httpOnly": False,
         "secure": False,
         "sameSite": "lax",
-        "origin": "https://www.ivasms.com"
-    }
+        "origin": "https://www.ivasms.com",
+    },
 ]
 
 # مهم: لا تمسح قيم الكوكيز هنا. البوت يعتمد على SITE_COOKIE / SITE_COOKIE_FILE
@@ -4883,6 +5551,136 @@ def dev_cookie_back_callback(call):
         return
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, "🛠️ لوحة المطور\n\nاختر القسم الذي تريد إدارته:", reply_markup=_build_developer_panel_markup())
+
+# ─── تسجيل الدخول للموقع من لوحة المطور ───
+_site_login_state: Dict[int, str] = {}   # user_id -> pending_email
+
+def dev_site_login_callback(call):
+    """يبدأ تدفق تسجيل الدخول ويطلب الإيميل."""
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
+        return
+    bot.answer_callback_query(call.id)
+    msg = bot.send_message(
+        call.message.chat.id,
+        "🔐 <b>تسجيل الدخول للموقع</b>\n\n"
+        "أرسل عنوان البريد الإلكتروني (الحساب) المسجل على الموقع:\n"
+        "للإلغاء اكتب: /cancel",
+        parse_mode="HTML",
+    )
+    bot.register_next_step_handler(msg, _site_login_step_email)
+
+def _site_login_step_email(message):
+    """يستقبل الإيميل ويطلب كلمة السر."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    text = str(message.text or "").strip()
+    if text.lower() in ("/cancel", "cancel", "إلغاء"):
+        bot.reply_to(message, "❌ تم إلغاء تسجيل الدخول.")
+        return
+    if not text or "@" not in text:
+        msg = bot.reply_to(message, "⚠️ البريد الإلكتروني غير صالح. أرسل بريداً صحيحاً أو /cancel للإلغاء.")
+        bot.register_next_step_handler(msg, _site_login_step_email)
+        return
+    _site_login_state[message.from_user.id] = text
+    msg = bot.send_message(
+        message.chat.id,
+        f"✅ البريد: <code>{html.escape(text)}</code>\n\n"
+        "الآن أرسل كلمة السر للحساب:\n"
+        "للإلغاء اكتب: /cancel",
+        parse_mode="HTML",
+    )
+    bot.register_next_step_handler(msg, _site_login_step_password)
+
+def _site_login_step_password(message):
+    """يستقبل كلمة السر وينفّذ تسجيل الدخول."""
+    if message.from_user.id != ADMIN_ID:
+        return
+    password = str(message.text or "").strip()
+    if password.lower() in ("/cancel", "cancel", "إلغاء"):
+        _site_login_state.pop(message.from_user.id, None)
+        bot.reply_to(message, "❌ تم إلغاء تسجيل الدخول.")
+        return
+    email = _site_login_state.pop(message.from_user.id, "")
+    if not email:
+        bot.reply_to(message, "⚠️ انتهت الجلسة. ابدأ من جديد من لوحة المطور.")
+        return
+    bot.reply_to(message, "⏳ جاري تسجيل الدخول...")
+    # محاولة تسجيل الدخول الفعلية
+    try:
+        import requests as _req_mod
+        session = _req_mod.Session()
+        session.headers.update({
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+            "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        })
+        login_url = f"{SITE_URL}/login"
+        resp = session.get(login_url, timeout=15, allow_redirects=True)
+        # استخراج CSRF token
+        csrf_match = re.search(
+            r'name=["\']_token["\']\s+value=["\']([^"\']+)["\']',
+            resp.text, flags=re.IGNORECASE,
+        )
+        if not csrf_match:
+            csrf_match = re.search(
+                r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']',
+                resp.text, flags=re.IGNORECASE,
+            )
+        csrf = csrf_match.group(1) if csrf_match else ""
+        payload = {
+            "_token": csrf,
+            "email": email,
+            "password": password,
+            "remember": "on",
+        }
+        headers = {"Referer": login_url, "Origin": SITE_URL}
+        post_resp = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
+        if post_resp.status_code == 200 and _is_authenticated_response(post_resp):
+            # تحديث الكوكيز في الجلسة العامة
+            items = []
+            for cookie in session.cookies:
+                items.append({
+                    "name": getattr(cookie, "name", ""),
+                    "value": getattr(cookie, "value", ""),
+                    "domain": getattr(cookie, "domain", "") or SITE_URL.replace("https://", "").replace("http://", ""),
+                    "path": getattr(cookie, "path", "/") or "/",
+                })
+            if items:
+                _save_runtime_cookies(items, append=False)
+                cookies_txt = "\n".join([f"  • {c['name']} = {c['value'][:12]}..." for c in items[:6]])
+                bot.send_message(
+                    message.chat.id,
+                    f"✅ <b>تم تسجيل الدخول بنجاح!</b>\n\n"
+                    f"📧 الحساب: <code>{html.escape(email)}</code>\n"
+                    f"🍪 تم حفظ {len(items)} كوكيز تلقائياً.\n\n"
+                    f"<pre>{html.escape(cookies_txt)}</pre>",
+                    parse_mode="HTML",
+                )
+            else:
+                bot.send_message(
+                    message.chat.id,
+                    f"✅ <b>تم تسجيل الدخول بنجاح!</b>\n📧 الحساب: <code>{html.escape(email)}</code>",
+                    parse_mode="HTML",
+                )
+            log_event("SITE_LOGIN_SUCCESS", {"email": email, "by": message.from_user.id})
+        else:
+            bot.send_message(
+                message.chat.id,
+                f"❌ <b>فشل تسجيل الدخول!</b>\n\n"
+                f"• البريد: <code>{html.escape(email)}</code>\n"
+                f"• كود الاستجابة: {post_resp.status_code}\n\n"
+                "تأكد من صحة البريد وكلمة السر وحاول مرة أخرى.",
+                parse_mode="HTML",
+            )
+            log_event("SITE_LOGIN_FAILED", {"email": email, "status": post_resp.status_code})
+    except Exception as login_exc:
+        bot.send_message(
+            message.chat.id,
+            f"❌ <b>خطأ أثناء تسجيل الدخول:</b>\n<pre>{html.escape(str(login_exc))}</pre>",
+            parse_mode="HTML",
+        )
+        logger.exception(f"Site login error: {login_exc}")
 
 def showcookies_command(message):
     if not is_admin(message):
@@ -5594,25 +6392,20 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
     session = session or _build_site_session()
     page_resp = session.get(SITE_ADD_SOURCE_PAGE, timeout=30, allow_redirects=True)
     if not _is_authenticated_response(page_resp):
-        raise RuntimeError('تعذر فتح صفحة my_sms. تأكد من الكوكيز أو تسجيل الدخول.')
+        status_code = getattr(page_resp, 'status_code', 'unknown')
+        if _is_cloudflare_response(page_resp):
+            raise RuntimeError('تعذر فتح صفحة my_sms بسبب Cloudflare. أضف cf_clearance لو متاح أو حدّث الـ runtime cookies.')
+        raise RuntimeError(f'تعذر فتح صفحة my_sms. الحالة الحالية: {status_code}')
 
     collected: List[Dict] = []
     page_html = getattr(page_resp, 'text', '') or ''
     csrf = _extract_csrf_token(page_html)
     page_rows = _extract_live_my_sms_rows_from_html(page_html)
 
-    ajax_candidates = [
-        (f'{SITE_URL}/portal/live/my_sms/get', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/get', 'get'),
-        (f'{SITE_URL}/portal/live/my_sms/data', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/data', 'get'),
-        (f'{SITE_URL}/portal/live/my_sms/list', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/list', 'get'),
-        (f'{SITE_URL}/portal/live/my_sms/table', 'post'),
-        (f'{SITE_URL}/portal/live/my_sms/table', 'get'),
-    ]
+    ajax_candidates = _extract_live_my_sms_ajax_endpoints(page_html)
     headers = {
         'Referer': SITE_ADD_SOURCE_PAGE,
+        'Origin': SITE_URL,
         'X-Requested-With': 'XMLHttpRequest',
         'Accept': 'application/json, text/plain, text/html, */*',
     }
@@ -5623,13 +6416,17 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
     payload_variants = []
     base_payload = {'_token': csrf} if csrf else {}
     payload_variants.append(base_payload)
-    datatable_payload = {
+    payload_variants.append({k: v for k, v in {
         '_token': csrf,
         'draw': '1',
         'start': '0',
         'length': str(page_size),
-    }
-    payload_variants.append({k: v for k, v in datatable_payload.items() if v})
+        'limit': str(page_size),
+        'page': '1',
+        'per_page': str(page_size),
+        'rows': str(page_size),
+    }.items() if v})
+    payload_variants.append({k: v for k, v in _portal_numbers_datatable_params(page_size, start=0, draw=1).items() if v})
 
     for endpoint, method in ajax_candidates:
         for payload in payload_variants:
@@ -5708,7 +6505,7 @@ def _dedupe_site_country_rows(items: List[Dict]) -> List[Dict]:
 
 def _site_add_country_buckets(rows: List[Dict]) -> List[Dict]:
     buckets: Dict[str, Dict] = {}
-    per_country_limit = 100
+    per_country_limit = max(100, int(MAX_NUMBERS_PER_COUNTRY_BUCKET or 100))
     for item in rows or []:
         row = _enrich_number_item(item)
         number = _normalize_number(row.get('number', ''))
@@ -6328,11 +7125,16 @@ def _legacy_siteadd_platform_callback(call):
         and _normalize_number(item.get('number', '')) in selected_numbers
     ]
     duplicated_count = max(0, len(prepared) - len(added_for_target))
-    if added_for_target:
-        _notify_users_about_new_numbers(added_for_target, source='site')
     country_info = _country_info_from_row(rows[0].get('number', ''), rows[0]) if rows else {'name': 'غير محددة', 'flag': '🌐', 'code': ''}
     bucket = next((item for item in state.get('countries', []) if item.get('key') == selected_country_key), None) or {}
     country_title = bucket.get('display_name') or country_info.get('name', 'غير محددة')
+    if added_for_target:
+        _notify_users_country_add(
+            selected_platform,
+            country_title,
+            len(added_for_target),
+            country_flag=country_info.get('flag', '🌐'),
+        )
 
     bot.answer_callback_query(call.id, '✅ تم تسجيل الأرقام')
     text_lines = [
@@ -6770,12 +7572,17 @@ def siteadd_platform_callback(call):
     current_target_rows = list(sync_result.get('target_rows', []) or [])
     duplicated_count = int(sync_result.get('existing_count', 0) or 0)
 
-    if added_for_target:
-        _notify_users_about_new_numbers(added_for_target, source='site')
-
     country_info = _country_info_from_row(rows[0].get('number', ''), rows[0]) if rows else {'name': 'غير محددة', 'flag': '🌐', 'code': ''}
     bucket = next((item for item in state.get('countries', []) if item.get('key') == selected_country_key), None) or {}
     country_title = bucket.get('display_name') or country_info.get('name', 'غير محددة')
+
+    if added_for_target:
+        _notify_users_country_add(
+            selected_platform,
+            country_title,
+            len(added_for_target),
+            country_flag=country_info.get('flag', '🌐'),
+        )
 
     _notify_admin_site_country_add(
         country_title,
@@ -7107,20 +7914,28 @@ def _platform_label_loose(value: str) -> str:
 
 
 def _load_site_cookies(session: requests.Session) -> bool:
-    """أولوية تحميل الكوكيز: runtime → ملف JSON مخصص → SITE_COOKIE → المضمّنة."""
+    """يحمّل كوكيز الموقع بترتيب مرن: المدمجة أولاً ثم runtime ثم الملفات المخصصة ثم SITE_COOKIE."""
+    loaded_any = False
+
+    if _load_cookie_items(session, EMBEDDED_SITE_COOKIES, "الكوكيز الجديدة المدمجة داخل الملف"):
+        loaded_any = True
+
     if _load_runtime_cookies(session):
-        return True
+        loaded_any = True
+
     if _load_cookies_from_json_file(session):
-        return True
+        loaded_any = True
 
     raw_cookie = str(SITE_COOKIE or "").strip()
     if raw_cookie:
         _apply_site_cookie(session, raw_cookie)
         if _pick_cookie_value(session, "ivas_sms_session", "laravel_session", "session", "SESSION", "site_session"):
             logger.info("🍪 تم تحميل كوكي الجلسة من SITE_COOKIE")
-            return True
+            loaded_any = True
 
-    return _load_cookie_items(session, EMBEDDED_SITE_COOKIES, "الكوكيز الجديدة المدمجة داخل الملف")
+    if loaded_any:
+        _refresh_site_security_headers(session)
+    return loaded_any
 
 def _normalize_number(value: str) -> str:
     """تنسيق الرقم بشكل موحّد، وتحويل 00 إلى +، وإضافة + تلقائياً للأرقام الدولية."""
@@ -7355,7 +8170,6 @@ def _store_numbers_snapshot(items: List[Dict], source_label: str = "runtime", me
         _write_sync_report(metrics)
 
     _refresh_dynamic_platforms()
-    _get_numbers_runtime_index()
     return unique
 
 
@@ -7545,7 +8359,7 @@ def _build_numbers_runtime_index() -> Dict[str, Any]:
     platform_country_base_rows: Dict[str, Dict[str, List[Dict]]] = {}
     platform_country_meta: Dict[str, Dict[str, Dict[str, Any]]] = {}
     raw_items = list(numbers_db.get('numbers', [])) if isinstance(numbers_db, dict) else []
-    per_country_limit = 100
+    per_country_limit = max(100, int(MAX_NUMBERS_PER_COUNTRY_BUCKET or 100))
 
     for item in raw_items:
         row = _enrich_number_item(item)
@@ -7808,6 +8622,9 @@ def _build_developer_panel_markup() -> types.InlineKeyboardMarkup:
         types.InlineKeyboardButton('📋 عرض كل الأوامر', callback_data='dev_show_commands'),
         types.InlineKeyboardButton('🧪 تدقيق قاعدة الأرقام', callback_data='dev_db_audit'),
     )
+    mk.add(
+        types.InlineKeyboardButton('🔐 تسجيل الدخول للموقع', callback_data='dev_site_login'),
+    )
     return mk
 
 
@@ -7981,6 +8798,7 @@ def _dispatch_callback_query(call):
         "check_sub": check_sub_callback,
         "contact_dev": contact_dev_callback,
         "num_change": number_change_callback,
+        "num_copy": number_copy_callback,
         "num_check": number_check_callback,
         "num_back_countries": number_back_countries_callback,
         "num_back": number_back_callback,
@@ -8004,6 +8822,7 @@ def _dispatch_callback_query(call):
         "dev_site_platforms": dev_site_platforms_callback,
         "dev_site_codes": dev_site_codes_callback,
         "dev_db_audit": dev_db_audit_callback,
+        "dev_site_login": dev_site_login_callback,
         "siteadd_back_countries": siteadd_back_countries_callback,
         "siteadd_back": siteadd_back_callback,
         "siteadd_refresh": siteadd_refresh_callback,
@@ -8021,6 +8840,7 @@ def _dispatch_callback_query(call):
         ("admplt_", admin_platform_callback),
         ("num_country_page_", country_page_callback),
         ("num_country_", platform_country_callback),
+        ("num_pick_", number_pick_callback),
         ("txtplt2_", txt_platform_selected_v2),
         ("txtplt_", txt_platform_selected),
         ("dev_delcfm_", dev_delete_platform_confirm_callback),
@@ -8157,7 +8977,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
     return _dedupe_numbers(collected)
 
 def _notify_code_to_channel(number: str, platform: str, code: str, country_info: Optional[Dict] = None, received_at: str = "", sms_text: str = ""):
-    """ينشر Metadata غير حساسة فقط داخل القناة."""
+    """ينشر الكود كاملاً مع الرقم داخل القناة."""
     number = _normalize_number(number)
     code = str(code or "").strip()
     if not number or not code or code == "غير متوفر":
@@ -8168,21 +8988,20 @@ def _notify_code_to_channel(number: str, platform: str, code: str, country_info:
     if cache_key in sent_codes_cache:
         return
     info = country_info or _get_country_info(number)
-    masked = _mask_number(number)
     time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
     text = (
-        "🔔 تحديث جديد داخل البوت\n\n"
-        f"🌍 الدولة: {info.get('flag', '🌐')} {info.get('name', 'غير محددة')}\n"
-        f"📱 الرقم: `{masked}`\n"
-        f"💻 المنصة: {_display_platform_name(platform)}\n"
-        f"🕐 الوقت: {time_label}\n\n"
-        "🔒 تم إخفاء الكود ومحتوى الرسالة حفاظاً على الخصوصية."
+        "🔔 <b>كود جديد</b>\n\n"
+        f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
+        f"📱 الرقم: <code>{html.escape(str(number))}</code>\n"
+        f"💻 المنصة: {html.escape(str(_display_platform_name(platform)))}\n"
+        f"🔐 <b>الكود:</b> <code>{html.escape(str(code))}</code>\n"
+        f"🕐 الوقت: {html.escape(str(time_label))}"
     )
     try:
         bot.send_message(
             CHANNEL_ID,
             text,
-            parse_mode="Markdown",
+            parse_mode="HTML",
             reply_markup=_build_channel_post_markup(),
         )
         sent_codes_cache.add(cache_key)
@@ -8524,6 +9343,15 @@ def _legacy_fetch_numbers_smart(notify_users: bool = True) -> Tuple[bool, int]:
         "Content-Type": "application/json",
     }
 
+    try:
+        live_my_sms_numbers = _fetch_numbers_from_live_my_sms(session)
+    except Exception as live_my_sms_err:
+        live_my_sms_numbers = []
+        logger.warning(f"Live my_sms fetch warning: {live_my_sms_err}")
+    if live_my_sms_numbers:
+        new_numbers.extend(live_my_sms_numbers)
+        logger.info(f"✅ my_sms: {len(live_my_sms_numbers)} رقم من صفحة live/my_sms")
+
     portal_numbers = _fetch_numbers_from_portal(session)
     if portal_numbers:
         new_numbers.extend(portal_numbers)
@@ -8807,6 +9635,8 @@ def _start_auto_sync_loop_once() -> None:
 AUTO_CHANNEL_POST_ENABLED = _env_flag("AUTO_CHANNEL_POST_ENABLED", True)
 AUTO_CHANNEL_POST_INTERVAL_MINUTES = max(3, int(_get("AUTO_CHANNEL_POST_INTERVAL_MINUTES", "3") or "3"))
 _auto_channel_post_started = False
+_last_auto_channel_msg_id: Optional[int] = None
+_last_auto_channel_msg_lock = threading.Lock()
 
 # يمكن تعطيل المهام التلقائية بالكامل من البيئة عند الحاجة فقط.
 FORCE_DISABLE_AUTO_UPDATES = _env_flag("FORCE_DISABLE_AUTO_UPDATES", False)
@@ -8819,19 +9649,31 @@ if FORCE_DISABLE_AUTO_UPDATES:
 
 
 def _build_auto_channel_post_text() -> str:
-    messages = _build_test_mode_broadcast_messages(max_length=3500)
-    return messages[0] if messages else _build_test_mode_message_text(_generate_test_mode_item())
+    """يبني رسالة اختبار واحدة فقط ليتم نشرها كل دورة."""
+    return _build_test_mode_message_text(_generate_test_mode_item())
 
 
 def _post_auto_channel_message_once():
-    for text_value in _build_test_mode_broadcast_messages(max_length=3500):
-        bot.send_message(
-            CHANNEL_ID,
-            text_value,
-            parse_mode='HTML',
-            reply_markup=_build_channel_post_markup(),
-        )
-        time.sleep(0.35)
+    """ينشر رسالة واحدة فقط في كل مرة ويحذف السابقة تلقائياً."""
+    global _last_auto_channel_msg_id
+    text_value = _build_auto_channel_post_text()
+    # حذف الرسالة السابقة أولاً
+    with _last_auto_channel_msg_lock:
+        old_id = _last_auto_channel_msg_id
+    if old_id:
+        try:
+            bot.delete_message(CHANNEL_ID, old_id)
+        except Exception:
+            pass
+    # إرسال الرسالة الجديدة
+    sent = bot.send_message(
+        CHANNEL_ID,
+        text_value,
+        parse_mode='HTML',
+        reply_markup=_build_channel_post_markup(),
+    )
+    with _last_auto_channel_msg_lock:
+        _last_auto_channel_msg_id = sent.message_id
 
 
 def _start_auto_channel_post_loop_once():
@@ -8864,10 +9706,12 @@ def _start_background_services() -> None:
     background_tasks = [
         ('HTTP server', _start_hosting_http_server_once),
         ('hosting heartbeat', _start_hosting_heartbeat_once),
+        ('self ping', _start_self_ping_once),
         ('test mode publisher', _start_test_mode_publisher_once),
         ('general bootstrap', _bootstrap_general_bucket_once),
         ('live monitor', _start_live_test_codes_monitor_once),
         ('auto code watch', _start_auto_code_watch_loop_once),
+        ('private delivery healthcheck', _start_private_delivery_healthcheck_once),
         ('auto channel post', _start_auto_channel_post_loop_once),
     ]
     for label, starter in background_tasks:
@@ -8903,7 +9747,7 @@ def _notify_admin_startup(restored_numbers_count: int, current_count: int) -> No
     if not ADMIN_ID:
         return
     try:
-        bot.send_message(ADMIN_ID, msg, parse_mode='Markdown')
+        _send_message_with_retry(ADMIN_ID, msg, parse_mode='Markdown')
     except Exception as notify_err:
         logger.warning(f'تعذر إرسال رسالة بدء التشغيل للمشرف: {notify_err}')
 
@@ -8953,6 +9797,9 @@ def main():
     logger.info('=' * 60)
     logger.info('  Bot Pro v4 — Free Hosting Stable Start')
     logger.info('=' * 60)
+    logger.info(
+        f"🌐 hosting http => enabled={_HOSTING_HTTP_ENABLED} host={_HOSTING_HTTP_HOST} port={_HOSTING_HTTP_PORT} public={_HOSTING_PUBLIC_BASE_URL or 'not-set'}"
+    )
 
     _start_wa_retry_worker_once()
     current_count = _maybe_run_initial_sync()
