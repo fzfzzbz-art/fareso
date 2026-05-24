@@ -1176,19 +1176,19 @@ def _save_welcome_message(text: str):
         logger.warning(f"تعذّر حفظ رسالة الترحيب: {e}")
 
 def _mask_number(number: str) -> str:
-    """يُعيد الرقم مع إظهار أول رقم وآخر رقم فقط، وإخفاء الباقي."""
+    """يُعيد الرقم مع تشفير الأرقام الوسطى مع الإبقاء على البداية والنهاية."""
     raw = str(number or "").strip()
     digits_only = re.sub(r"\D", "", raw)
     if not digits_only:
         return raw or "غير متوفر"
-
-    if len(digits_only) == 1:
-        return digits_only
-    if len(digits_only) == 2:
-        return digits_only[0] + "*"
-
-    masked_digits = digits_only[0] + ("*" * (len(digits_only) - 2)) + digits_only[-1]
-    return ("+" if raw.startswith("+") else "") + masked_digits
+    if len(digits_only) <= 4:
+        return digits_only[:1] + "*" * max(1, len(digits_only) - 2) + digits_only[-1:]
+    if len(digits_only) <= 8:
+        return digits_only[:2] + "*" * max(1, len(digits_only) - 4) + digits_only[-2:]
+    prefix = raw[:5]
+    suffix = digits_only[-3:]
+    hidden = max(3, len(digits_only) - 8)
+    return prefix + "*" * hidden + suffix
 
 def _save_new_welcome_step(message):
     if message.from_user.id != ADMIN_ID:
@@ -3158,7 +3158,7 @@ def _build_country_number_picker_markup(rows: List[Dict[str, Any]], start_index:
         if not number:
             continue
         status = _number_status_payload(row)
-        label = f"{status['emoji']} {_mask_number(number)}"
+        label = f"{status['emoji']} {number}"
         mk.add(types.InlineKeyboardButton(label, callback_data=f"num_pick_{idx}"))
     nav_row = [types.InlineKeyboardButton("🔄 Change Number", callback_data="num_change")]
     nav_row.append(types.InlineKeyboardButton("🌍 Change Country", callback_data="num_back_countries"))
@@ -3189,7 +3189,7 @@ def _format_country_numbers_picker_card(platform: str, rows: List[Dict[str, Any]
         "<b>الأرقام المعروضة حالياً:</b>",
     ]
     for _, row in preview:
-        number = html.escape(_mask_number(_normalize_number(str(row.get("number", "") or ""))))
+        number = html.escape(str(_normalize_number(str(row.get("number", "") or ""))))
         status = _number_status_payload(row)
         lines.append(f"{status['emoji']} <code>{number}</code> — {status['label']}")
     if len(rows) > len(preview):
@@ -3199,7 +3199,7 @@ def _format_country_numbers_picker_card(platform: str, rows: List[Dict[str, Any]
 
 def _format_assigned_number_card(number: str, platform: str, country_info: Optional[Dict[str, Any]] = None) -> str:
     info = dict(country_info or _get_country_info(number) or {})
-    number_html = html.escape(_mask_number(number))
+    number_html = html.escape(str(number or ""))
     country_flag = html.escape(str(info.get("flag", "🌍") or "🌍"))
     country_name = html.escape(str(info.get("name", "Unknown") or "Unknown"))
     platform_display = html.escape(str(_display_platform_name(platform or GENERAL_PLATFORM_NAME) or GENERAL_PLATFORM_NAME))
@@ -4100,7 +4100,7 @@ def _build_auto_code_delivery_message(number: str, detected_platform: str, info:
         "⚡ <b>وصل كود جديد تلقائياً</b>\n\n"
         f"📂 القسم: {html.escape(str(detected_platform or GENERAL_PLATFORM_NAME))}\n"
         f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
-        f"📱 الرقم: <code>{html.escape(_mask_number(number))}</code>\n"
+        f"📱 الرقم: <code>{html.escape(str(number))}</code>\n"
         f"🔐 <b>الكود:</b> <code>{html.escape(str(code_value))}</code>\n"
         f"🕐 الوقت: {html.escape(str(received_at))}"
     )
@@ -4379,7 +4379,7 @@ def auto_send_codes():
         if key in sent_codes_cache:
             continue
 
-        text = f"📩 كود جديد\n\n📱 الرقم: {_mask_number(number)}\n💻 المنصة: {platform}\n🔐 الكود: {code}"
+        text = f"📩 كود جديد\n\n📱 الرقم: {number}\n💻 المنصة: {platform}\n🔐 الكود: {code}"
         try:
             bot.send_message(CHANNEL_USERNAME, text)
             sent_codes_cache.add(key)
@@ -9890,7 +9890,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
     return _dedupe_numbers(collected)
 
 def _notify_code_to_channel(number: str, platform: str, code: str, country_info: Optional[Dict] = None, received_at: str = "", sms_text: str = ""):
-    """ينشر الكود كاملاً مع الرقم داخل القناة."""
+    """ينشر الكود في القناة مع تشفير الرقم، بينما يبقى الرقم كاملاً داخل محادثة المستخدم."""
     number = _normalize_number(number)
     code = str(code or "").strip()
     if not number or not code or code == "غير متوفر":
@@ -9902,10 +9902,11 @@ def _notify_code_to_channel(number: str, platform: str, code: str, country_info:
         return
     info = country_info or _get_country_info(number)
     time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
+    masked_number = _mask_number(number)
     text = (
         "🔔 <b>كود جديد</b>\n\n"
         f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
-        f"📱 الرقم: <code>{html.escape(_mask_number(number))}</code>\n"
+        f"📱 الرقم: <code>{html.escape(str(masked_number or number))}</code>\n"
         f"💻 المنصة: {html.escape(str(_display_platform_name(platform)))}\n"
         f"🔐 <b>الكود:</b> <code>{html.escape(str(code))}</code>\n"
         f"🕐 الوقت: {html.escape(str(time_label))}"
