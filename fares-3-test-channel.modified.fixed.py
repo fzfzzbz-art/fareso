@@ -1407,16 +1407,42 @@ def _extract_csrf_token(page_html: str) -> str:
     if not page_html:
         return ""
     patterns = [
-        r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']',
-        r"_token['\"]?\s*[,=:]\s*['\"]([^'\"]+)['\"]",
-        r'name=["\']_token["\']\s+value=["\']([^"\']+)["\']',
+        r"<meta[^>]+name=['\"]csrf-token['\"][^>]+content=['\"]([^'\"]+)['\"]",
+        r"<meta[^>]+content=['\"]([^'\"]+)['\"][^>]+name=['\"]csrf-token['\"]",
+        r"name=['\"]_token['\"][^>]+value=['\"]([^'\"]+)['\"]",
+        r"value=['\"]([^'\"]+)['\"][^>]+name=['\"]_token['\"]",
+        r"csrf(?:_|-|\\s)?token['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+        r"_token['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+        r"XSRF-TOKEN['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+        r"window\.(?:Laravel|laravel)\s*=\s*\{.*?['\"]csrfToken['\"]\s*:\s*['\"]([^'\"]+)['\"]",
     ]
     for pattern in patterns:
-        match = re.search(pattern, page_html, flags=re.IGNORECASE)
+        match = re.search(pattern, page_html, flags=re.IGNORECASE | re.DOTALL)
         if match:
-            return match.group(1).strip()
+            return html.unescape(match.group(1)).strip()
     return ""
 
+
+def _resolve_csrf_token(session: Optional[requests.Session] = None, page_html: str = "", response: Optional[requests.Response] = None) -> str:
+    token = _extract_csrf_token(page_html)
+    if token:
+        return token
+
+    if session is not None:
+        cookie_token = _pick_cookie_value(session, "XSRF-TOKEN", "XSRF_TOKEN", "csrf-token", "csrftoken")
+        if cookie_token:
+            return urllib.parse.unquote(str(cookie_token).strip())
+        for header_name in ("X-CSRF-TOKEN", "X-XSRF-TOKEN"):
+            header_value = str(session.headers.get(header_name, "") or "").strip()
+            if header_value:
+                return header_value
+
+    if response is not None:
+        for header_name in ("X-CSRF-TOKEN", "X-XSRF-TOKEN", "csrf-token"):
+            header_value = str(getattr(response, 'headers', {}).get(header_name, "") or "").strip()
+            if header_value:
+                return header_value
+    return ""
 def _strip_html_text(value: str) -> str:
     text_value = re.sub(r"<br\s*/?>", "\n", str(value or ""), flags=re.IGNORECASE)
     text_value = re.sub(r"<[^>]+>", " ", text_value)
@@ -1829,7 +1855,7 @@ def _fetch_latest_sms_for_number(number: str, platform_hint: str = "") -> Option
             "Referer": f"{SITE_URL}/portal/sms/received",
         })
         page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=20)
-        csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
+        csrf = _resolve_csrf_token(session, getattr(page_resp, "text", ""), page_resp)
         if not csrf:
             logger.warning("تعذر استخراج CSRF token من صفحة الرسائل")
         else:
@@ -2214,6 +2240,16 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
     except Exception as portal_err:
         logger.warning(f"Portal datatable fetch failed: {portal_err}")
     return _dedupe_numbers(collected)
+
+def _number_item_key(item: Dict) -> Tuple[str, str]:
+    row = _enrich_number_item(item)
+    if not row:
+        return ("", "")
+    return (
+        _normalize_number(row.get("number", "")),
+        _normalize_platform(row.get("platform", "") or GENERAL_PLATFORM_NAME).lower(),
+    )
+
 
 def _find_newly_added_numbers(old_items: List[Dict], new_items: List[Dict]) -> List[Dict]:
     old_keys = {_number_item_key(item) for item in old_items if _number_item_key(item)[0]}
@@ -2940,12 +2976,12 @@ def events_handler(message):
     if not last:
         bot.reply_to(message, "📭 لا أحداث مسجّلة.")
         return
-    text = "📋 *آخر 10 أحداث:*\n\n"
+    lines = ["📋 آخر 10 أحداث:", ""]
     for ev in reversed(last):
-        ts = ev.get("timestamp", "")[:16]
-        tp = ev.get("type", "")
-        text += f"`{ts}` — {tp}\n"
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+        ts = str(ev.get("timestamp", "") or "")[:16]
+        tp = str(ev.get("type", "") or "")
+        lines.append(f"{ts} — {tp}")
+    bot.send_message(message.chat.id, "\n".join(lines))
 
 def send_summary_wa(message):
     if not numbers_db["numbers"]:
@@ -5722,16 +5758,7 @@ def _site_login_step_password(message):
         login_url = f"{SITE_URL}/login"
         resp = session.get(login_url, timeout=15, allow_redirects=True)
         # استخراج CSRF token
-        csrf_match = re.search(
-            r'name=["\']_token["\']\s+value=["\']([^"\']+)["\']',
-            resp.text, flags=re.IGNORECASE,
-        )
-        if not csrf_match:
-            csrf_match = re.search(
-                r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']',
-                resp.text, flags=re.IGNORECASE,
-            )
-        csrf = csrf_match.group(1) if csrf_match else ""
+        csrf = _resolve_csrf_token(session, resp.text, resp)
         payload = {
             "_token": csrf,
             "email": email,
@@ -6000,7 +6027,7 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
     if page_resp.status_code != 200 or "/login" in final_url.lower() or _looks_like_guest_page(page_text):
         raise RuntimeError("الجلسة غير مسجلة دخول أو انتهت صلاحيتها. سجّل الدخول للموقع من لوحة المطور أولاً.")
 
-    csrf = _extract_csrf_token(page_text)
+    csrf = _resolve_csrf_token(session, page_text, page_resp)
     lengths = []
     for candidate in (int(length or 1000), 1000, 500, 250, 100):
         if candidate > 0 and candidate not in lengths:
@@ -9789,7 +9816,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
             "Referer": f"{SITE_URL}/portal/sms/received",
         })
         page_resp = session.get(f"{SITE_URL}/portal/sms/received", timeout=15)
-        csrf = _extract_csrf_token(getattr(page_resp, "text", ""))
+        csrf = _resolve_csrf_token(session, getattr(page_resp, "text", ""), page_resp)
         if not csrf:
             return collected
 
