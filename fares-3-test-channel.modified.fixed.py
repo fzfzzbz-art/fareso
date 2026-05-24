@@ -99,7 +99,7 @@ _DEFAULTS = {
     "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
     "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
     "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
-    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers"),
+    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers/data"),
     "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
     "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
     "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
@@ -2750,7 +2750,10 @@ def cmd_start(message):
     )
 
 def sync_handler(message):
-    bot.reply_to(message, "⛔ تم تعطيل الجلب من الموقع. إضافة الأرقام أصبحت يدوية فقط من داخل البوت.")
+    if not is_admin(message):
+        bot.reply_to(message, "⛔ هذا الزر متاح للمسؤول فقط.")
+        return
+    _dev_fetch_from_site_and_report(message.chat.id)
 
 def add_manual_prompt(message):
     platforms = _platform_picker_platforms()
@@ -5837,6 +5840,89 @@ def _site_ajax_headers(referer: str = "") -> Dict[str, str]:
     return headers
 
 
+def _normalize_site_datatable_payload(payload: Any) -> Dict[str, Any]:
+    if isinstance(payload, list):
+        return {
+            "data": payload,
+            "recordsTotal": len(payload),
+            "recordsFiltered": len(payload),
+        }
+    if not isinstance(payload, dict):
+        return {}
+
+    def _wrap(rows: Any, original: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        if not isinstance(rows, list):
+            return {}
+        base = dict(original or {})
+        base["data"] = rows
+        base.setdefault("recordsTotal", len(rows))
+        base.setdefault("recordsFiltered", len(rows))
+        return base
+
+    for key in ("data", "aaData", "rows", "results", "items", "records"):
+        wrapped = _wrap(payload.get(key), payload)
+        if wrapped:
+            return wrapped
+
+    nested = payload.get("d")
+    if isinstance(nested, (dict, list)):
+        wrapped = _normalize_site_datatable_payload(nested)
+        if wrapped:
+            merged = dict(payload)
+            merged.update(wrapped)
+            return merged
+
+    return payload if isinstance(payload.get("data"), list) else {}
+
+
+def _extract_table_rows_from_html(page_html: str) -> List[List[str]]:
+    rows: List[List[str]] = []
+    for row_html in re.findall(r'<tr\b[^>]*>.*?</tr>', page_html or '', flags=re.IGNORECASE | re.DOTALL):
+        cells = re.findall(r'<t[dh][^>]*>(.*?)</t[dh]>', row_html, flags=re.IGNORECASE | re.DOTALL)
+        cleaned = [cell for cell in cells if _strip_html_text(cell)]
+        if cleaned:
+            rows.append(cleaned)
+    return rows
+
+
+def _datatable_row_cells(raw_row: Any) -> List[Any]:
+    if isinstance(raw_row, dict):
+        return list(raw_row.values())
+    if isinstance(raw_row, (list, tuple)):
+        return list(raw_row)
+    return [raw_row]
+
+
+def _normalized_lookup_key(key: Any) -> str:
+    return re.sub(r'[^a-z0-9]+', '', str(key or '').strip().lower())
+
+
+def _datatable_row_lookup(raw_row: Any) -> Dict[str, Any]:
+    if not isinstance(raw_row, dict):
+        return {}
+    mapped: Dict[str, Any] = {}
+    for key, value in raw_row.items():
+        normalized = _normalized_lookup_key(key)
+        if normalized and normalized not in mapped:
+            mapped[normalized] = value
+    return mapped
+
+
+def _row_lookup_first(raw_row: Any, *keys: str) -> Any:
+    lookup = _datatable_row_lookup(raw_row)
+    for key in keys:
+        normalized = _normalized_lookup_key(key)
+        if normalized not in lookup:
+            continue
+        value = lookup.get(normalized)
+        if value is None:
+            continue
+        if isinstance(value, str) and not value.strip():
+            continue
+        return value
+    return ""
+
+
 def _site_datatable_json(session: requests.Session, page_url: str, data_url: str, length: int = 1000) -> Dict[str, Any]:
     page_resp = session.get(page_url, timeout=20, allow_redirects=True)
     page_text = getattr(page_resp, "text", "") or ""
@@ -5888,12 +5974,21 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
                         allow_redirects=True,
                     )
                 resp.raise_for_status()
-                payload_json = resp.json()
+                payload_json = _normalize_site_datatable_payload(resp.json())
                 if isinstance(payload_json, dict) and isinstance(payload_json.get("data"), list):
                     return payload_json
             except Exception as fetch_err:
                 last_error = fetch_err
                 continue
+
+    html_rows = _extract_table_rows_from_html(page_text)
+    if html_rows:
+        return {
+            "data": html_rows,
+            "recordsTotal": len(html_rows),
+            "recordsFiltered": len(html_rows),
+            "fallback": "page_html_table",
+        }
 
     raise RuntimeError(f"تعذر جلب بيانات الصفحة: {last_error or 'استجابة غير متوقعة'}")
 
@@ -5984,20 +6079,39 @@ def _fetch_site_ranges_snapshot(session: Optional[requests.Session] = None) -> D
     payload = _site_datatable_json(session or _build_site_session(), page_url, data_url, length=500)
     rows: List[Dict[str, Any]] = []
     for raw_row in payload.get("data", []) or []:
-        if not isinstance(raw_row, (list, tuple)):
+        cells = _datatable_row_cells(raw_row)
+        if not cells:
             continue
-        cells = list(raw_row) + [""] * max(0, 4 - len(raw_row))
-        links = _extract_links_from_html(cells[0])
-        range_name = _strip_html_text(cells[1])
-        amount = _strip_html_text(cells[2])
-        package = _strip_html_text(cells[3])
+        padded_cells = cells + [""] * max(0, 4 - len(cells))
+        action_blob = " | ".join(str(cell or "") for cell in cells if cell is not None)
+        links = _extract_links_from_html(
+            _row_lookup_first(raw_row, "action", "actions", "download", "links", "options", "buttons") or action_blob
+        )
+        range_name = _strip_html_text(
+            _row_lookup_first(raw_row, "range", "range_name", "name", "service", "platform", "title", "label")
+            or (padded_cells[1] if len(padded_cells) > 1 else padded_cells[0])
+        )
+        amount = _strip_html_text(
+            _row_lookup_first(raw_row, "amount", "qty", "quantity", "count", "numbers", "total")
+            or (padded_cells[2] if len(padded_cells) > 2 else "")
+        )
+        package = _strip_html_text(
+            _row_lookup_first(raw_row, "package", "plan", "bundle", "offer", "category")
+            or (padded_cells[3] if len(padded_cells) > 3 else "")
+        )
         rows.append({
             "range": range_name,
-            "platform": _guess_platform_from_payload(range_name) or _normalize_platform(range_name) or GENERAL_PLATFORM_NAME,
+            "platform": _guess_platform_from_payload(
+                _row_lookup_first(raw_row, "platform", "service", "range", "name"),
+                range_name,
+                package,
+                action_blob,
+            ) or _normalize_platform(range_name) or GENERAL_PLATFORM_NAME,
             "amount": amount,
             "package": package,
             "download_url": links[0] if len(links) >= 1 else "",
             "revoke_url": links[1] if len(links) >= 2 else "",
+            "row_blob": action_blob,
         })
     return {
         "page_url": page_url,
@@ -6025,20 +6139,18 @@ def _range_row_platform_guess(row: Dict[str, Any], extra_text: str = "") -> str:
 def _fetch_numbers_from_my_numbers_page(session: Optional[requests.Session] = None) -> List[Dict]:
     session = session or _build_site_session()
     page_url = _get("MY_NUMBERS_URL", f"{SITE_URL}/my/numbers")
-    data_url = _get("MY_NUMBERS_DATA_URL", f"{SITE_URL}/my/numbers")
+    data_url = _get("MY_NUMBERS_DATA_URL", f"{SITE_URL}/my/numbers/data")
     payload = _site_datatable_json(session, page_url, data_url, length=1000)
     rows: List[Dict] = []
     seen = set()
 
     for raw_row in payload.get("data", []) or []:
-        if isinstance(raw_row, dict):
-            cells = list(raw_row.values())
-        elif isinstance(raw_row, (list, tuple)):
-            cells = list(raw_row)
-        else:
-            cells = [raw_row]
+        cells = _datatable_row_cells(raw_row)
         combined_text = " | ".join(_strip_html_text(cell) for cell in cells if cell is not None)
-        guessed_platform = _guess_platform_from_payload(*[str(cell or "") for cell in cells[:8]]) or GENERAL_PLATFORM_NAME
+        guessed_platform = _guess_platform_from_payload(
+            _row_lookup_first(raw_row, "platform", "service", "range", "name"),
+            *[str(cell or "") for cell in cells[:8]],
+        ) or GENERAL_PLATFORM_NAME
         for cell in cells:
             for number in _extract_phone_candidates_from_text(str(cell or "")):
                 item = _enrich_number_item({
@@ -6097,6 +6209,9 @@ def _fetch_numbers_from_site_ranges(session: Optional[requests.Session] = None) 
             str(meta.get("package") or ""),
             str(meta.get("amount") or ""),
             str(meta.get("download_url") or ""),
+            str(meta.get("revoke_url") or ""),
+            str(meta.get("row_blob") or ""),
+            json.dumps(meta, ensure_ascii=False),
         ])
         for inline_number in _extract_phone_candidates_from_text(inline_blob):
             _append_number(inline_number, meta, "my_ranges_inline", extra_text=inline_blob)
@@ -6183,20 +6298,34 @@ def _fetch_site_codes_snapshot() -> Dict[str, Any]:
     payload = _site_datatable_json(_build_site_session(), page_url, data_url, length=1000)
     rows: List[Dict[str, Any]] = []
     for raw_row in payload.get("data", []) or []:
-        if not isinstance(raw_row, (list, tuple)):
+        cells = _datatable_row_cells(raw_row)
+        if not cells:
             continue
-        cells = list(raw_row) + [""] * max(0, 8 - len(raw_row))
-        message_text = html.unescape(str(cells[3] or "")).strip()
+        padded_cells = cells + [""] * max(0, 8 - len(cells))
+        combined_html = " | ".join(str(cell or "") for cell in cells if cell is not None)
+        message_text = html.unescape(_strip_html_text(
+            _row_lookup_first(raw_row, "message", "msg", "sms", "text", "body", "content") or padded_cells[3]
+        )).strip()
+        range_name = _strip_html_text(
+            _row_lookup_first(raw_row, "range", "service", "range_name", "title", "name") or padded_cells[0]
+        )
+        number_value = _normalize_number(
+            _row_lookup_first(raw_row, "number", "phone", "mobile", "msisdn", "full_number", "fullNumber", "tel", "did", "cli", "line")
+            or str(padded_cells[1] or "")
+        )
+        platform_value = _normalize_platform(
+            _row_lookup_first(raw_row, "platform", "service", "sender") or padded_cells[2]
+        ) or _guess_platform_from_payload(range_name, padded_cells[2], message_text, combined_html) or GENERAL_PLATFORM_NAME
         rows.append({
-            "range": _strip_html_text(cells[0]),
-            "number": _normalize_number(str(cells[1] or "")),
-            "platform": _normalize_platform(cells[2]) or _guess_platform_from_payload(cells[0], cells[2], message_text) or GENERAL_PLATFORM_NAME,
+            "range": range_name,
+            "number": number_value,
+            "platform": platform_value,
             "message": message_text,
             "code": _extract_display_code_from_text(message_text),
-            "used": _strip_html_text(cells[4]),
-            "price": _strip_html_text(cells[5]),
-            "package": _strip_html_text(cells[6]),
-            "time": _format_site_timestamp(cells[7]),
+            "used": _strip_html_text(_row_lookup_first(raw_row, "used", "status", "state") or padded_cells[4]),
+            "price": _strip_html_text(_row_lookup_first(raw_row, "price", "cost", "amount") or padded_cells[5]),
+            "package": _strip_html_text(_row_lookup_first(raw_row, "package", "plan", "bundle") or padded_cells[6]),
+            "time": _format_site_timestamp(_row_lookup_first(raw_row, "time", "date", "created_at", "createdAt", "received_at") or padded_cells[7]),
         })
     return {
         "page_url": page_url,
