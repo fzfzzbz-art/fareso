@@ -4487,6 +4487,12 @@ def dev_fetch_site_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
+    _site_add_set_view_meta(
+        call.from_user.id,
+        entry_title='➕ إضافة أرقام من الموقع',
+        preferred_source_label='',
+        preferred_page_url='',
+    )
     bot.answer_callback_query(call.id, "⏳ جاري تحديث دول الموقع الآن...")
     _launch_site_add_open_async(
         call.message.chat.id,
@@ -6022,8 +6028,19 @@ def dev_site_platforms_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
-    bot.answer_callback_query(call.id, "⏳ جاري فتح my/ranges وجلب الأرقام...")
-    _report_site_platforms(call.message.chat.id)
+    _site_add_set_view_meta(
+        call.from_user.id,
+        entry_title='📂 فتح my/ranges',
+        preferred_source_label='my/ranges',
+        preferred_page_url=_get("RANGES_URL", f"{SITE_URL}/my/ranges"),
+    )
+    bot.answer_callback_query(call.id, "⏳ جاري فتح my/ranges وتجهيز الدول والمنصات...")
+    _launch_site_add_open_async(
+        call.message.chat.id,
+        call.from_user.id,
+        refresh=True,
+        message_id=call.message.message_id,
+    )
 
 
 def dev_site_codes_callback(call):
@@ -6037,7 +6054,13 @@ def dev_site_codes_callback(call):
 def siteplatforms_command(message):
     if not is_admin(message):
         return
-    _report_site_platforms(message.chat.id)
+    _site_add_set_view_meta(
+        message.from_user.id,
+        entry_title='📂 فتح my/ranges',
+        preferred_source_label='my/ranges',
+        preferred_page_url=_get("RANGES_URL", f"{SITE_URL}/my/ranges"),
+    )
+    _launch_site_add_open_async(message.chat.id, message.from_user.id, refresh=True)
 
 
 def sitecodes_command(message):
@@ -6912,6 +6935,55 @@ def _site_add_selected_country_rows(state: Optional[Dict]) -> List[Dict]:
     return [dict(item) for item in list(grouped.get(selected_country_key, []) or []) if isinstance(item, dict)]
 
 
+def _site_add_set_view_meta(user_id: int, entry_title: str = '', preferred_source_label: str = '', preferred_page_url: str = '') -> Dict:
+    state = dict(site_add_state.get(user_id, {}) or {})
+    if entry_title is not None:
+        state['entry_title'] = str(entry_title or '').strip()
+    if preferred_source_label is not None:
+        state['preferred_source_label'] = str(preferred_source_label or '').strip()
+    if preferred_page_url is not None:
+        state['preferred_page_url'] = str(preferred_page_url or '').strip()
+    site_add_state[user_id] = state
+    return state
+
+
+def _site_add_entry_title(state: Optional[Dict]) -> str:
+    payload = state if isinstance(state, dict) else {}
+    title = str(payload.get('entry_title') or '').strip()
+    return title or '➕ إضافة أرقام من الموقع'
+
+
+def _site_add_platform_rows(rows: List[Dict], platform: str) -> List[Dict]:
+    normalized_platform = _normalize_platform(platform)
+    matched: List[Dict] = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        routed = _route_platform_for_site_row(row, fallback=str(row.get('raw_platform') or row.get('platform') or platform))
+        if _normalize_platform(routed) != normalized_platform:
+            continue
+        item = dict(row)
+        item['detected_platform'] = routed
+        matched.append(item)
+    return matched
+
+
+def _site_add_country_platforms(state: Optional[Dict]) -> List[str]:
+    rows = _site_add_selected_country_rows(state)
+    found: List[str] = []
+    seen = set()
+    for row in rows:
+        routed = _route_platform_for_site_row(row, fallback=str(row.get('raw_platform') or row.get('platform') or ''))
+        normalized = _normalize_platform(routed)
+        if not normalized or normalized in seen or normalized == GENERAL_PLATFORM_NAME:
+            continue
+        seen.add(normalized)
+        found.append(normalized)
+    if found:
+        return found
+    return list(_platform_picker_platforms())
+
+
 def _site_add_state_from_dataset(user_id: int, data: Dict, previous_state: Optional[Dict] = None) -> Dict:
     previous = dict(previous_state or site_add_state.get(user_id, {}) or {})
     countries = list(data.get('countries', []) or [])
@@ -6944,6 +7016,9 @@ def _site_add_state_from_dataset(user_id: int, data: Dict, previous_state: Optio
         'countries_page': previous_page,
         'total_numbers': data.get('total_numbers', 0),
         'used_cached_fallback': bool(data.get('used_cached_fallback')),
+        'entry_title': str(previous.get('entry_title') or '').strip(),
+        'preferred_source_label': str(previous.get('preferred_source_label') or '').strip(),
+        'preferred_page_url': str(previous.get('preferred_page_url') or '').strip(),
     }
     site_add_state[user_id] = state
     return state
@@ -7018,9 +7093,11 @@ def _build_site_add_number_markup(user_id: int) -> types.InlineKeyboardMarkup:
     if not selected_country_key or not selected_country_total:
         return _build_site_add_platform_markup(user_id)
 
-    platforms = list(_platform_picker_platforms())
+    platforms = _site_add_country_platforms(state)
     for idx, platform in enumerate(platforms):
-        label = f"{_platform_button_label(platform, include_count=False)} ← {selected_country_total}"
+        platform_rows = _site_add_platform_rows(selected_country_rows, platform)
+        platform_total = len(platform_rows) or selected_country_total
+        label = f"{_platform_button_label(platform, include_count=False)} ({platform_total})"
         mk.add(types.InlineKeyboardButton(label[:60], callback_data=f"siteaddplt_{idx}"))
     mk.add(types.InlineKeyboardButton('⬅️ رجوع للدول', callback_data='siteadd_back_countries'))
     mk.add(types.InlineKeyboardButton('🔄 تحديث كل مصادر الموقع', callback_data='siteadd_refresh'))
@@ -7032,10 +7109,11 @@ def _site_add_platforms_text(user_id: int) -> str:
     countries = list(state.get('countries', []) or [])
     current_page = _site_add_current_page(user_id)
     total_pages = _site_add_total_pages(countries)
-    source_label = str(state.get('source_label', SITE_ADD_SOURCE_LABEL) or SITE_ADD_SOURCE_LABEL)
-    page_url = str(state.get('page_url', SITE_ADD_SOURCE_PAGE) or SITE_ADD_SOURCE_PAGE)
+    source_label = str(state.get('preferred_source_label') or state.get('source_label', SITE_ADD_SOURCE_LABEL) or SITE_ADD_SOURCE_LABEL)
+    page_url = str(state.get('preferred_page_url') or state.get('page_url', SITE_ADD_SOURCE_PAGE) or SITE_ADD_SOURCE_PAGE)
+    title = _site_add_entry_title(state)
     lines = [
-        '➕ إضافة أرقام من الموقع',
+        title,
         '',
         f"🔎 المصادر المدمجة: {source_label}",
         f"🌐 الصفحات: {page_url}",
@@ -7046,7 +7124,7 @@ def _site_add_platforms_text(user_id: int) -> str:
         '♻️ تم استخدام آخر نتائج محفوظة مؤقتاً' if state.get('used_cached_fallback') else '✅ البيانات مباشرة من الموقع الآن',
         '',
         'اختَر الدولة من الأزرار تحت.',
-        'لو عدد الدول كبير استخدم أزرار السابق/التالي، وبعد اختيار الدولة البوت هيضيف كل أرقامها للمنصة المختارة تلقائياً.',
+        'بعد ما تضغط على الدولة هيظهروا المنصات المرتبطة بيها، ولما تختار المنصة البوت هيزامن الأرقام ويخليها متاحة لكل المستخدمين.',
     ]
     return '\n'.join(lines)
 
@@ -7189,7 +7267,7 @@ def siteadd_country_callback(call):
     site_add_state[call.from_user.id] = state
 
     preview_lines = [
-        '➕ إضافة أرقام من الموقع',
+        _site_add_entry_title(state),
         '',
         f"🌍 الدولة: {bucket.get('flag', '🌐')} {bucket.get('display_name') or bucket.get('name', 'غير محددة')}",
         f"☎️ مفتاح الدولة: {bucket.get('code', 'غير محدد') or 'غير محدد'}",
@@ -7297,7 +7375,7 @@ def _legacy_siteadd_platform_callback(call):
         and _normalize_number(item.get('number', '')) in selected_numbers
     ]
     duplicated_count = max(0, len(prepared) - len(added_for_target))
-    country_info = _country_info_from_row(rows[0].get('number', ''), rows[0]) if rows else {'name': 'غير محددة', 'flag': '🌐', 'code': ''}
+    country_info = _country_info_from_row(target_rows[0].get('number', ''), target_rows[0]) if target_rows else {'name': 'غير محددة', 'flag': '🌐', 'code': ''}
     bucket = next((item for item in state.get('countries', []) if item.get('key') == selected_country_key), None) or {}
     country_title = bucket.get('display_name') or country_info.get('name', 'غير محددة')
     if added_for_target:
@@ -7713,7 +7791,7 @@ def siteadd_platform_callback(call):
         _launch_site_add_open_async(call.message.chat.id, call.from_user.id, refresh=False, message_id=call.message.message_id)
         return
 
-    platforms = list(_platform_picker_platforms())
+    platforms = _site_add_country_platforms(state)
     try:
         idx = int(call.data.replace('siteaddplt_', '', 1))
         selected_platform = platforms[idx]
@@ -7721,19 +7799,23 @@ def siteadd_platform_callback(call):
         bot.answer_callback_query(call.id, 'المنصة غير موجودة', show_alert=True)
         return
 
+    target_rows = _site_add_platform_rows(rows, selected_platform)
+    if not target_rows:
+        target_rows = [dict(item) for item in rows]
+
     bot.answer_callback_query(call.id, '⏳ جاري مزامنة أرقام الدولة...')
     state['selected_platform'] = selected_platform
     state['selected_country_rows'] = []
-    state['selected_country_total'] = len(rows)
+    state['selected_country_total'] = len(target_rows)
     site_add_state[call.from_user.id] = state
 
     prepared = []
     now_label = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    for row in rows:
+    for row in target_rows:
         item = dict(row)
         item['selected_platform'] = selected_platform
         item['platform'] = selected_platform
-        item['site_section'] = SITE_ADD_SOURCE_LABEL
+        item['site_section'] = str(item.get('site_section') or SITE_ADD_SOURCE_LABEL or '').strip() or SITE_ADD_SOURCE_LABEL
         item['source'] = str(item.get('source') or 'site_picker').strip() or 'site_picker'
         item['added_at'] = now_label
         prepared.append(item)
@@ -7774,6 +7856,7 @@ def siteadd_platform_callback(call):
         f"♻️ الأرقام الموجودة مسبقاً ومازالت بالموقع: {duplicated_count}",
         f"🗑️ الأرقام التي تم حذفها لأنها اختفت من الموقع: {len(removed_items)}",
         f"📦 إجمالي أرقام الدولة الحالية داخل المنصة بعد المزامنة: {len(current_target_rows)}",
+        f"📲 الأرقام اللي اتعالِجت للمنصة المختارة: {len(prepared)}",
         '',
         'دلوقتي نفس الدولة بتتحدث كمزامنة كاملة: اللي بالموقع يفضل، واللي اتحذف من الموقع بيتشال من البوت.',
         'ولو حابب تضيف نفس الدولة على منصة تانية تقدر تختار منصة تانية من نفس الأزرار.',
