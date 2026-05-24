@@ -198,6 +198,14 @@ AUTO_SYNC_NUMBERS = _env_flag("AUTO_SYNC_NUMBERS", False)
 PRESERVE_EXISTING_NUMBERS_ON_FETCH = _env_flag("PRESERVE_EXISTING_NUMBERS_ON_FETCH", True)
 PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC = _env_flag("PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC", True)
 
+SITE_DATATABLE_ALLOW_POST = _env_flag("SITE_DATATABLE_ALLOW_POST", False)
+LIVE_MY_SMS_ALLOW_AJAX_POST = _env_flag("LIVE_MY_SMS_ALLOW_AJAX_POST", False)
+SITE_FETCH_INCLUDE_SMS_RANGES = _env_flag("SITE_FETCH_INCLUDE_SMS_RANGES", False)
+SITE_DATASET_INCLUDE_SLOW_SMS_RANGES = _env_flag("SITE_DATASET_INCLUDE_SLOW_SMS_RANGES", False)
+AUTO_SYNC_SITE_DATA_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_DATA_ON_NEW_USER", True)
+AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER", True)
+AUTO_SYNC_SITE_MIN_INTERVAL_SECONDS = max(15, int(_get("AUTO_SYNC_SITE_MIN_INTERVAL_SECONDS", "60") or "60"))
+
 BASE_DIR = Path(__file__).resolve().parent
 
 def _resolve_storage_root() -> Path:
@@ -2221,6 +2229,7 @@ def _source_label_for_new_numbers(source: str) -> str:
         'site': 'إضافة من الموقع',
         'site_picker': 'إضافة من الموقع',
         'site_add': 'إضافة من الموقع',
+        'site_auto_sync': 'مزامنة تلقائية من الموقع',
     }
     return mapping.get(normalized, normalized or 'غير معروف')
 
@@ -2707,10 +2716,12 @@ def _send_user_start_bundle(chat_id: int):
 
 def cmd_start(message):
     uid = message.from_user.id
-    if uid not in users_db["users"]:
+    is_new_user = uid not in users_db["users"]
+    if is_new_user:
         users_db["users"].append(uid)
         save_json(USERS_FILE, users_db)
         log_event("NEW_USER", {"user_id": uid})
+        _launch_new_user_site_bootstrap(message.chat.id, uid)
 
     if not is_admin(message) and not _check_subscription(uid):
         mk_sub = types.InlineKeyboardMarkup()
@@ -2988,9 +2999,6 @@ def _build_number_actions_markup() -> types.InlineKeyboardMarkup:
     mk.add(types.InlineKeyboardButton("📋 نسخ الرقم", callback_data="num_copy"))
     mk.add(types.InlineKeyboardButton("🔄 تغيير الرقم", callback_data="num_change"))
     mk.add(types.InlineKeyboardButton("🌍 تغيير الدولة", callback_data="num_back_countries"))
-    messages_url = str(_get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages") or "").strip()
-    if messages_url:
-        mk.add(types.InlineKeyboardButton("💬 فتح my/messages", url=messages_url))
     if TEST_MAIN_CHANNEL_URL:
         mk.add(types.InlineKeyboardButton("👥 الجروب", url=TEST_MAIN_CHANNEL_URL))
     else:
@@ -5951,8 +5959,9 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
             payload_variants.append(rich_payload)
 
     last_error: Optional[Exception] = None
+    request_methods = ("get", "post") if SITE_DATATABLE_ALLOW_POST else ("get",)
     for payload in payload_variants:
-        for method in ("get", "post"):
+        for method in request_methods:
             headers = _site_ajax_headers(page_url)
             headers["Origin"] = SITE_URL
             if csrf:
@@ -7025,6 +7034,8 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
 
     for endpoint, method in ajax_candidates:
         for payload in payload_variants:
+            if method == 'post' and not LIVE_MY_SMS_ALLOW_AJAX_POST:
+                continue
             try:
                 if method == 'post':
                     resp = session.post(endpoint, data=payload, headers=headers, timeout=22, allow_redirects=True)
@@ -7273,7 +7284,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
         best_dataset = merged_dataset if merged_dataset.get('countries') or merged_dataset.get('rows') else fresh_dataset
 
         countries_count = len(merged_dataset.get('countries') or [])
-        should_try_slow_source = countries_count < SITE_ADD_MIN_COUNTRIES and (refresh or not deduped_quick_rows or countries_count <= 1)
+        should_try_slow_source = SITE_DATASET_INCLUDE_SLOW_SMS_RANGES and countries_count < SITE_ADD_MIN_COUNTRIES and (refresh or not deduped_quick_rows or countries_count <= 1)
         if should_try_slow_source:
             slow_rows, slow_counts, slow_labels, slow_urls = _run_source_jobs([
                 ('sms_ranges', f'{SITE_URL}/portal/sms/received', lambda: _fetch_numbers_from_sms_ranges(_build_site_session())),
@@ -7382,14 +7393,15 @@ def _site_add_country_platforms(state: Optional[Dict]) -> List[str]:
         seen.add(normalized)
         found.append(normalized)
 
-    # المنصات الأساسية المطلوبة تظهر دائماً أولاً داخل شاشة إضافة أرقام الموقع.
-    for platform_name in SITE_ADD_FIXED_PLATFORM_CHOICES:
-        _push_platform(platform_name)
-
-    # وبعدها نُلحق أي منصات إضافية اكتشفناها فعلياً من بيانات الموقع.
+    # المنصات المكتشفة فعلياً من بيانات نفس الدولة تظهر أولاً حتى لا يتم ربط الدولة بمنصة خاطئة.
     for row in rows:
         routed = _route_platform_for_site_row(row, fallback=str(row.get('raw_platform') or row.get('platform') or ''))
         _push_platform(routed)
+
+    # لو الموقع لم يوضح منصة الدولة، نعرض القائمة الثابتة كحل احتياطي فقط.
+    if not found:
+        for platform_name in SITE_ADD_FIXED_PLATFORM_CHOICES:
+            _push_platform(platform_name)
 
     if found:
         return found
@@ -8088,8 +8100,10 @@ SITE_MANAGED_NUMBER_SOURCES = {
     'site',
     'site_picker',
     'site_add',
+    'site_auto_sync',
     'portal_json',
     'my_sms',
+    'sms_range',
     'sms_ranges',
     'site_fetch',
 }
@@ -8208,6 +8222,124 @@ def _notify_admin_site_country_add(country_name: str, country_flag: str, platfor
         bot.send_message(ADMIN_ID, "\n".join(lines))
     except Exception as admin_notify_err:
         logger.warning(f'تعذر إرسال إشعار خاص بإضافة أرقام الموقع: {admin_notify_err}')
+
+
+_new_user_site_bootstrap_lock = threading.Lock()
+_last_new_user_site_bootstrap_at = 0.0
+
+
+def _auto_sync_site_dataset_to_detected_platforms(data: Optional[Dict[str, Any]] = None, notify_users: bool = False) -> Dict[str, Any]:
+    dataset = data or _build_site_platform_number_dataset(refresh=True)
+    countries = list(dataset.get('countries', []) or [])
+    grouped = dict(dataset.get('grouped', {}) or {})
+    summary = {
+        'countries': 0,
+        'platform_buckets': 0,
+        'added': 0,
+        'removed': 0,
+        'preserved': 0,
+        'total': 0,
+        'platforms': [],
+    }
+    synced_platforms: List[str] = []
+    now_label = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+
+    for bucket in countries:
+        country_key = str(bucket.get('key') or '').strip()
+        if not country_key:
+            continue
+        raw_rows = [
+            dict(item)
+            for item in list(bucket.get('rows', []) or grouped.get(country_key, []) or [])
+            if isinstance(item, dict)
+        ]
+        if not raw_rows:
+            continue
+
+        by_platform: Dict[str, List[Dict[str, Any]]] = {}
+        for row in raw_rows:
+            routed_platform = _route_platform_for_site_row(
+                row,
+                fallback=str(row.get('raw_platform') or row.get('platform') or ''),
+            )
+            normalized_platform = _normalize_platform(routed_platform)
+            if not normalized_platform or normalized_platform == GENERAL_PLATFORM_NAME:
+                continue
+
+            item = dict(row)
+            item['selected_platform'] = normalized_platform
+            item['platform'] = normalized_platform
+            item['site_section'] = str(item.get('site_section') or SITE_ADD_SOURCE_LABEL or '').strip() or SITE_ADD_SOURCE_LABEL
+            item['source'] = 'site_auto_sync'
+            item['added_at'] = now_label
+            by_platform.setdefault(normalized_platform, []).append(item)
+
+        if not by_platform:
+            continue
+
+        summary['countries'] += 1
+        country_title = str(bucket.get('display_name') or bucket.get('name') or 'غير محددة').strip() or 'غير محددة'
+        country_flag = str(bucket.get('flag') or '🌐').strip() or '🌐'
+
+        for platform_name, items in by_platform.items():
+            sync_result = _sync_site_country_numbers_for_platform(platform_name, country_key, _dedupe_numbers(items))
+            added_items = list(sync_result.get('added_items', []) or [])
+            removed_items = list(sync_result.get('removed_items', []) or [])
+            preserved_items = list(sync_result.get('preserved_items', []) or [])
+            target_rows = list(sync_result.get('target_rows', []) or [])
+
+            summary['platform_buckets'] += 1
+            summary['added'] += len(added_items)
+            summary['removed'] += len(removed_items)
+            summary['preserved'] += len(preserved_items)
+            summary['total'] += len(target_rows)
+            if platform_name not in synced_platforms:
+                synced_platforms.append(platform_name)
+
+            if notify_users and added_items:
+                _notify_users_country_add(platform_name, country_title, len(added_items), country_flag=country_flag)
+
+    if synced_platforms:
+        _refresh_dynamic_platforms(synced_platforms)
+    summary['platforms'] = synced_platforms
+    return summary
+
+
+def _launch_new_user_site_bootstrap(chat_id: int, user_id: int) -> None:
+    if not (AUTO_SYNC_SITE_DATA_ON_NEW_USER or AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER):
+        return
+
+    def _worker() -> None:
+        global _last_new_user_site_bootstrap_at
+        acquired = _new_user_site_bootstrap_lock.acquire(blocking=False)
+        if not acquired:
+            logger.info('New user site bootstrap skipped: another bootstrap is already running')
+            return
+        try:
+            now_ts = time.time()
+            if (now_ts - float(_last_new_user_site_bootstrap_at or 0.0)) < AUTO_SYNC_SITE_MIN_INTERVAL_SECONDS:
+                logger.info('New user site bootstrap skipped بسبب حد التكرار الزمني')
+                return
+            _last_new_user_site_bootstrap_at = now_ts
+
+            if AUTO_SYNC_SITE_COUNTRIES_ON_NEW_USER:
+                dataset = _build_site_platform_number_dataset(refresh=True)
+                summary = _auto_sync_site_dataset_to_detected_platforms(dataset, notify_users=False)
+                logger.info(
+                    f"New user site bootstrap: countries={summary.get('countries', 0)} | "
+                    f"platform_buckets={summary.get('platform_buckets', 0)} | added={summary.get('added', 0)}"
+                )
+                return
+
+            if AUTO_SYNC_SITE_DATA_ON_NEW_USER:
+                ok, count = fetch_numbers_smart(notify_users=False)
+                logger.info(f'New user site bootstrap fallback: ok={ok} count={count}')
+        except Exception as bootstrap_err:
+            logger.warning(f'New user site bootstrap failed for {user_id}/{chat_id}: {bootstrap_err}')
+        finally:
+            _new_user_site_bootstrap_lock.release()
+
+    threading.Thread(target=_worker, daemon=True, name='new-user-site-bootstrap').start()
 
 
 def siteadd_platform_callback(call):
@@ -9660,7 +9792,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
                         "number": number,
                         "platform": platform,
                         "site_section": str(range_name).strip(),
-                        "source": "sms_range",
+                        "source": "sms_ranges",
                         "added_at": time.ctime(),
                     })
 
@@ -10051,10 +10183,13 @@ def _legacy_fetch_numbers_smart(notify_users: bool = True) -> Tuple[bool, int]:
         new_numbers.extend(portal_numbers)
         logger.info(f"✅ Portal: {len(portal_numbers)} رقم من صفحة My Numbers")
 
-    sms_range_numbers = _fetch_numbers_from_sms_ranges(session)
-    if sms_range_numbers:
-        new_numbers.extend(sms_range_numbers)
-        logger.info(f"✅ SMS ranges: {len(sms_range_numbers)} رقم مع المنصات الأصلية")
+    if SITE_FETCH_INCLUDE_SMS_RANGES:
+        sms_range_numbers = _fetch_numbers_from_sms_ranges(session)
+        if sms_range_numbers:
+            new_numbers.extend(sms_range_numbers)
+            logger.info(f"✅ SMS ranges: {len(sms_range_numbers)} رقم مع المنصات الأصلية")
+    else:
+        logger.info("⏭️ تم تخطي SMS ranges في جلب الأرقام الافتراضي للحفاظ على الجلب غير التدميري.")
 
     api_endpoints = [
         f"{SITE_URL}/api/v1/numbers",
