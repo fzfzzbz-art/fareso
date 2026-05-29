@@ -3132,6 +3132,25 @@ def _number_status_payload(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _find_next_available_country_number_index(rows: List[Dict[str, Any]], start_index: int = 0) -> Optional[int]:
+    if not rows:
+        return None
+    total = len(rows)
+    start_index = int(start_index or 0) % total
+    first_valid_index: Optional[int] = None
+    for offset in range(total):
+        idx = (start_index + offset) % total
+        row = rows[idx] if idx < total else {}
+        number = _normalize_number(str(row.get("number", "") or ""))
+        if not number:
+            continue
+        if first_valid_index is None:
+            first_valid_index = idx
+        if _number_status_payload(row).get("available"):
+            return idx
+    return first_valid_index
+
+
 def _country_number_picker_slice(rows: List[Dict[str, Any]], start_index: int = 0, limit: int = 3) -> List[Tuple[int, Dict[str, Any]]]:
     if not rows:
         return []
@@ -3275,7 +3294,7 @@ def _render_user_number_card(chat_id: int, user_id: int, message_id: Optional[in
             f"📱 <b>إجمالي الأرقام:</b> {len(platform_numbers)}\n"
             f"📄 <b>الصفحة:</b> {page + 1} / {total_pages}\n"
             f"⚡ <b>المعروض الآن:</b> {start + 1 if countries else 0} - {end} من الدول المسجلة بالموقع\n\n"
-            "اضغط على <b>اسم الدولة</b> أولاً، وبعدها البوت هيعرض لك الأرقام بشكل عشوائي."
+            "اضغط على <b>اسم الدولة</b> أولاً، وبعدها البوت هيثبت لك رقم مباشر ويبدأ ينتظر الكود تلقائياً."
         )
         return _send_or_edit(
             chat_id,
@@ -3304,20 +3323,30 @@ def _render_user_number_card(chat_id: int, user_id: int, message_id: Optional[in
                 break
 
     if selected_index < 0:
-        index = int(state.get("index", 0)) % len(avail)
-        state["index"] = index
+        candidate_index = _find_next_available_country_number_index(avail, start_index=int(state.get("index", 0) or 0))
+        if candidate_index is None:
+            state["index"] = 0
+            state["platform"] = platform
+            state.pop("number", None)
+            user_number_state[user_id] = state
+            _clear_auto_code_watch(user_id)
+            text = (
+                "❌ <b>لا يوجد رقم صالح داخل هذه الدولة حالياً</b>\n\n"
+                f"• 📲 <b>المنصة</b> ~ {platform_display}\n"
+                "جرّب تغيير الرقم أو اختر دولة ثانية."
+            )
+            return _send_or_edit(
+                chat_id,
+                text,
+                reply_markup=_build_number_actions_markup(),
+                message_id=message_id,
+                parse_mode="HTML",
+            )
+        selected_index = candidate_index
+        state["index"] = selected_index
         state["platform"] = platform
-        state.pop("number", None)
+        state["number"] = avail[selected_index]["number"]
         user_number_state[user_id] = state
-        _clear_auto_code_watch(user_id)
-        text = _format_country_numbers_picker_card(platform, avail, start_index=index)
-        return _send_or_edit(
-            chat_id,
-            text,
-            reply_markup=_build_country_number_picker_markup(avail, start_index=index),
-            message_id=message_id,
-            parse_mode="HTML",
-        )
 
     index = selected_index
     state["index"] = index
@@ -3408,16 +3437,17 @@ def platform_country_callback(call):
         _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
         return
     random.shuffle(avail)
+    selected_index = _find_next_available_country_number_index(avail, start_index=0)
     state["platform"] = platform
     state["country_key"] = country_key
-    state["index"] = 0
-    state.pop("number", None)
+    state["index"] = int(selected_index or 0)
+    state["number"] = avail[state["index"]].get("number", "") if avail else ""
     _clear_auto_code_watch(call.from_user.id)
     state['_country_rows_platform'] = _normalize_platform(platform)
     state['_country_rows_key'] = country_key
     state['_country_rows'] = [dict(item) for item in avail]
     user_number_state[call.from_user.id] = state
-    bot.answer_callback_query(call.id, "✅ تم فتح الدولة وعرض 3 أرقام")
+    bot.answer_callback_query(call.id, "✅ تم فتح الدولة وتثبيت رقم مباشر")
     _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
 
 
@@ -3484,12 +3514,20 @@ def number_change_callback(call):
         user_number_state[call.from_user.id] = state
         _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
         return
-    step = 3 if len(avail) > 3 else 1
-    state["index"] = (int(state.get("index", 0)) + step) % len(avail)
-    state.pop("number", None)
+    current_index = int(state.get("index", 0) or 0)
+    next_index = _find_next_available_country_number_index(avail, start_index=current_index + 1)
+    if next_index is None:
+        state.pop("number", None)
+        _clear_auto_code_watch(call.from_user.id)
+        user_number_state[call.from_user.id] = state
+        bot.answer_callback_query(call.id, "لا يوجد رقم صالح آخر حالياً", show_alert=True)
+        _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
+        return
+    state["index"] = next_index
+    state["number"] = avail[next_index].get("number", "")
     _clear_auto_code_watch(call.from_user.id)
     user_number_state[call.from_user.id] = state
-    bot.answer_callback_query(call.id, "✅ تم عرض 3 أرقام جديدة")
+    bot.answer_callback_query(call.id, "✅ تم تبديل الرقم مباشرة")
     _render_user_number_card(call.message.chat.id, call.from_user.id, message_id=call.message.message_id)
 
 
@@ -3899,7 +3937,7 @@ pending_activation = {}
 
 # تفعيل المراقبة التلقائية افتراضياً حتى يصل الكود للمستخدم بدون الحاجة لضبط متغير بيئة إضافي.
 AUTO_CODE_WATCH_ENABLED = _env_flag("AUTO_CODE_WATCH_ENABLED", True)
-AUTO_CODE_WATCH_INTERVAL_SECONDS = max(10.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "15.0") or "15.0").strip() or "15.0"))
+AUTO_CODE_WATCH_INTERVAL_SECONDS = max(3.0, float(str(_get("AUTO_CODE_WATCH_INTERVAL_SECONDS", "5.0") or "5.0").strip() or "5.0"))
 AUTO_CODE_WATCH_TTL_SECONDS = max(600, int(str(_get("AUTO_CODE_WATCH_TTL_SECONDS", "1800") or "1800").strip() or "1800"))
 TG_SEND_MAX_RETRIES = max(1, int(str(_get("TG_SEND_MAX_RETRIES", "4") or "4").strip() or "4"))
 TG_SEND_BASE_DELAY_SECONDS = max(1.0, float(str(_get("TG_SEND_BASE_DELAY_SECONDS", "2.0") or "2.0").strip() or "2.0"))
@@ -4228,7 +4266,17 @@ def _set_auto_code_watch(chat_id: int, user_id: int, number: str, platform: str,
             "skip_initial_fetch": False,
             "updated_at": time.time(),
         }
-
+    try:
+        watch_snapshot = _get_auto_code_watch(int(user_id))
+        if watch_snapshot:
+            threading.Thread(
+                target=_deliver_latest_code_to_watch,
+                args=(watch_snapshot,),
+                kwargs={"manual_trigger": False},
+                daemon=True,
+            ).start()
+    except Exception as probe_err:
+        logger.debug(f"AUTO_CODE_WATCH immediate probe skipped for {normalized_number}: {probe_err}")
 
 
 def _auto_code_watch_loop():
@@ -9890,7 +9938,7 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
     return _dedupe_numbers(collected)
 
 def _notify_code_to_channel(number: str, platform: str, code: str, country_info: Optional[Dict] = None, received_at: str = "", sms_text: str = ""):
-    """ينشر الكود في القناة مع تشفير الرقم، بينما يبقى الرقم كاملاً داخل محادثة المستخدم."""
+    """ينشر الكود كاملاً مع الرقم داخل القناة."""
     number = _normalize_number(number)
     code = str(code or "").strip()
     if not number or not code or code == "غير متوفر":
@@ -9902,11 +9950,10 @@ def _notify_code_to_channel(number: str, platform: str, code: str, country_info:
         return
     info = country_info or _get_country_info(number)
     time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
-    masked_number = _mask_number(number)
     text = (
         "🔔 <b>كود جديد</b>\n\n"
         f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
-        f"📱 الرقم: <code>{html.escape(str(masked_number or number))}</code>\n"
+        f"📱 الرقم: <code>{html.escape(str(number))}</code>\n"
         f"💻 المنصة: {html.escape(str(_display_platform_name(platform)))}\n"
         f"🔐 <b>الكود:</b> <code>{html.escape(str(code))}</code>\n"
         f"🕐 الوقت: {html.escape(str(time_label))}"
