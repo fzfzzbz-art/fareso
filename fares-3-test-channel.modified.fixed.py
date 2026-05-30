@@ -6510,6 +6510,57 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
     raise RuntimeError(f"تعذر جلب بيانات الصفحة: {last_error or 'استجابة غير متوقعة'}")
 
 
+def _normalize_site_action_link(candidate: Any) -> str:
+    link = html.unescape(str(candidate or "").strip())
+    if not link:
+        return ""
+    lowered = link.lower()
+    if lowered.startswith(("javascript:", "mailto:", "#")):
+        return ""
+    if link.startswith("//"):
+        link = f"https:{link}"
+    elif link.startswith("/"):
+        link = urllib.parse.urljoin(SITE_URL, link)
+    elif not link.startswith("http"):
+        link = urllib.parse.urljoin(f"{SITE_URL}/", link.lstrip("./"))
+    return link
+
+
+def _is_destructive_site_action_url(value: Any) -> bool:
+    link = _normalize_site_action_link(value)
+    if not link:
+        return False
+    parsed = urllib.parse.urlparse(link)
+    haystack = " ".join([
+        str(parsed.path or ""),
+        str(parsed.query or ""),
+        str(parsed.fragment or ""),
+    ]).lower()
+    dangerous_tokens = (
+        "revoke", "delete", "remove", "destroy", "cancel", "terminate",
+        "drop", "clear", "purge", "release", "unlink", "detach",
+    )
+    safe_tokens = ("download", "export", ".csv", ".txt", ".json", ".xls", ".xlsx", ".zip")
+    return any(token in haystack for token in dangerous_tokens) and not any(token in haystack for token in safe_tokens)
+
+
+def _is_safe_range_detail_url(value: Any) -> bool:
+    link = _normalize_site_action_link(value)
+    if not link or _is_destructive_site_action_url(link):
+        return False
+    parsed = urllib.parse.urlparse(link)
+    haystack = " ".join([
+        str(parsed.path or ""),
+        str(parsed.query or ""),
+        str(parsed.fragment or ""),
+    ]).lower()
+    safe_tokens = (
+        "download", "export", "file", "attachment", "data", "list", "table",
+        ".csv", ".txt", ".json", ".xls", ".xlsx", ".zip",
+    )
+    return any(token in haystack for token in safe_tokens)
+
+
 def _extract_links_from_html(value: Any) -> List[str]:
     found: List[str] = []
     seen = set()
@@ -6518,19 +6569,8 @@ def _extract_links_from_html(value: Any) -> List[str]:
         return found
 
     def _push(candidate: str) -> None:
-        link = html.unescape(str(candidate or "").strip())
-        if not link:
-            return
-        lowered = link.lower()
-        if lowered.startswith(("javascript:", "mailto:", "#")):
-            return
-        if link.startswith("//"):
-            link = f"https:{link}"
-        elif link.startswith("/"):
-            link = urllib.parse.urljoin(SITE_URL, link)
-        elif not link.startswith("http"):
-            link = urllib.parse.urljoin(f"{SITE_URL}/", link.lstrip("./"))
-        if link in seen:
+        link = _normalize_site_action_link(candidate)
+        if not link or link in seen:
             return
         seen.add(link)
         found.append(link)
@@ -6623,6 +6663,8 @@ def _fetch_site_ranges_snapshot(session: Optional[requests.Session] = None) -> D
             _row_lookup_first(raw_row, "package", "plan", "bundle", "offer", "category")
             or (padded_cells[3] if len(padded_cells) > 3 else "")
         )
+        safe_download_url = next((link for link in links if _is_safe_range_detail_url(link)), "")
+        destructive_action_url = next((link for link in links if _is_destructive_site_action_url(link)), "")
         rows.append({
             "range": range_name,
             "platform": _guess_platform_from_payload(
@@ -6633,8 +6675,8 @@ def _fetch_site_ranges_snapshot(session: Optional[requests.Session] = None) -> D
             ) or _normalize_platform(range_name) or GENERAL_PLATFORM_NAME,
             "amount": amount,
             "package": package,
-            "download_url": links[0] if len(links) >= 1 else "",
-            "revoke_url": links[1] if len(links) >= 2 else "",
+            "download_url": safe_download_url,
+            "revoke_url": destructive_action_url,
             "row_blob": action_blob,
         })
     return {
@@ -6740,14 +6782,15 @@ def _fetch_numbers_from_site_ranges(session: Optional[requests.Session] = None) 
         for inline_number in _extract_phone_candidates_from_text(inline_blob):
             _append_number(inline_number, meta, "my_ranges_inline", extra_text=inline_blob)
 
-        detail_urls = [url for url in [meta.get("download_url", ""), meta.get("revoke_url", "")] if str(url or "").strip()]
+        detail_urls = [url for url in [meta.get("download_url", "")] if _is_safe_range_detail_url(url)]
+        skipped_actions = [url for url in [meta.get("revoke_url", "")] if _is_destructive_site_action_url(url)]
+        for skipped_url in skipped_actions:
+            logger.warning(f"Skipping destructive my/ranges action URL to avoid deleting site numbers: {skipped_url}")
         for detail_url in detail_urls:
             detail_headers = _site_ajax_headers(page_url)
             detail_headers["Accept"] = "text/html, text/plain, application/json, text/csv, */*"
             try:
                 resp = session.get(detail_url, headers=detail_headers, timeout=30, allow_redirects=True)
-                if resp.status_code in {403, 405}:
-                    resp = session.post(detail_url, headers=detail_headers, timeout=30, allow_redirects=True)
             except Exception:
                 continue
             if resp.status_code != 200:
