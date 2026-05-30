@@ -8545,7 +8545,7 @@ def _legacy_siteadd_platform_callback(call):
         '✅ تم تسجيل أرقام الدولة داخل المنصة بنجاح',
         '',
         f"🌍 الدولة: {country_info.get('flag', '🌐')} {country_title}",
-        f"📂 المنصة: {_display_platform_name(selected_platform)}",
+        f"📂 المنصة: {_platform_arabic_label(selected_platform)}",
         f"🆕 الأرقام المضافة الآن: {len(added_for_target)}",
         f"♻️ الأرقام الموجودة مسبقاً: {duplicated_count}",
         f"📦 إجمالي الأرقام التي تمت معالجتها: {len(prepared)}",
@@ -8638,22 +8638,9 @@ def _test_platform_short_label(platform: str) -> str:
 
 def _test_platform_arabic_label(platform: str) -> str:
     normalized = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
-    arabic_map = {
-        "WhatsApp": "واتساب الرسمي",
-        "WhatsApp Business": "واتساب الأعمال",
-        "Telegram": "تيليجرام",
-        "Instagram": "إنستغرام",
-        "TikTok": "تيك توك",
-        "Facebook": "فيسبوك",
-        "Twitter": "إكس",
-        "Snapchat": "سناب شات",
-        "Discord": "ديسكورد",
-        "Google": "جوجل",
-        "YouTube": "يوتيوب",
-        "Netflix": "نتفلكس",
-        "General": "المنصة",
-    }
-    return arabic_map.get(normalized, _display_platform_name(normalized))
+    if normalized == 'General':
+        return 'المنصة'
+    return _platform_arabic_label(normalized)
 
 
 def _test_mode_visual_number(item: Dict[str, Any]) -> str:
@@ -9016,7 +9003,7 @@ def _notify_admin_site_country_add(country_name: str, country_flag: str, platfor
     lines = [
         f"📥 تمت إضافة أرقام للدولة {safe_country_flag} {safe_country_name}",
         '',
-        f"📂 المنصة: {_display_platform_name(platform)}",
+        f"📂 المنصة: {_platform_arabic_label(platform)}",
         f"🆕 الجديد: {max(0, int(added_count or 0))}",
         f"♻️ الموجود مسبقاً ومازال ظاهر بالموقع: {max(0, int(total_count or 0)) - max(0, int(added_count or 0)) - max(0, int(preserved_count or 0))}",
         f"🧷 الأرقام القديمة التي تم الإبقاء عليها ولم تُحذف: {max(0, int(preserved_count or 0))}",
@@ -9221,7 +9208,7 @@ def siteadd_platform_callback(call):
         '✅ تم تحديث أرقام الدولة داخل المنصة بنجاح',
         '',
         f"🌍 الدولة: {country_info.get('flag', '🌐')} {country_title}",
-        f"📂 المنصة: {_display_platform_name(selected_platform)}",
+        f"📂 المنصة: {_platform_arabic_label(selected_platform)}",
         f"🆕 الأرقام الجديدة الآن: {len(added_for_target)}",
         f"♻️ الأرقام الموجودة مسبقاً ومازالت ظاهرة بالموقع: {duplicated_count}",
         f"🧷 الأرقام القديمة التي تم الإبقاء عليها ولم تُحذف: {len(preserved_items)}",
@@ -9300,7 +9287,7 @@ def siteadd_number_callback(call):
         text = "\n".join([
             "✅ تم إضافة الرقم من الموقع بنجاح",
             "",
-            f"📂 المنصة: {_display_platform_name(final_row.get('platform', selected_platform))}",
+            f"📂 المنصة: {_platform_arabic_label(final_row.get('platform', selected_platform))}",
             f"🌍 الدولة: {country_label}",
             f"📱 الرقم: {final_row.get('number', '')}",
             "",
@@ -9311,7 +9298,7 @@ def siteadd_number_callback(call):
         text = "\n".join([
             "ℹ️ الرقم موجود مسبقاً داخل قاعدة البيانات",
             "",
-            f"📂 المنصة الحالية: {_display_platform_name(final_row.get('platform', selected_platform))}",
+            f"📂 المنصة الحالية: {_platform_arabic_label(final_row.get('platform', selected_platform))}",
             f"🌍 الدولة: {country_label}",
             f"📱 الرقم: {final_row.get('number', '')}",
         ])
@@ -9495,6 +9482,30 @@ def _display_platform_name(value: str) -> str:
         return ALL_NUMBERS_PLATFORM_NAME
     return normalized
 
+
+def _platform_arabic_label(value: str) -> str:
+    normalized = _normalize_platform(value)
+    arabic_map = {
+        'WhatsApp': 'واتساب',
+        'WhatsApp Business': 'واتساب الأعمال',
+        'Telegram': 'تيليجرام',
+        'Facebook': 'فيسبوك',
+        'Instagram': 'إنستغرام',
+        'TikTok': 'تيك توك',
+        'Snapchat': 'سناب شات',
+        'Twitter': 'إكس',
+        'X': 'إكس',
+        'Line': 'لاين',
+        'Viber': 'فايبر',
+        'IMO': 'آيمو',
+        'Google': 'جوجل',
+        'Discord': 'ديسكورد',
+        'Binance': 'بايننس',
+        'Netflix': 'نتفلكس',
+        'YouTube': 'يوتيوب',
+        'General': 'جميع الأرقام',
+    }
+    return arabic_map.get(normalized, _display_platform_name(normalized))
 
 
 PLATFORM_CANONICAL_ALIASES.update({
@@ -10213,8 +10224,8 @@ def _numbers_for_platform(platform: str) -> List[Dict]:
 
 def _platform_button_label(platform: str, include_count: bool = True, counts_map: Optional[Dict[str, int]] = None) -> str:
     normalized = _normalize_platform(platform)
-    display_name = _display_platform_name(normalized)
-    icon = PLATFORM_BUTTON_ICONS.get(display_name) or PLATFORM_BUTTON_ICONS.get(normalized, '📂')
+    display_name = _platform_arabic_label(normalized)
+    icon = PLATFORM_BUTTON_ICONS.get(_display_platform_name(normalized)) or PLATFORM_BUTTON_ICONS.get(normalized, '📂')
     if include_count and normalized not in SPECIAL_PLATFORMS:
         count = None
         if isinstance(counts_map, dict):
