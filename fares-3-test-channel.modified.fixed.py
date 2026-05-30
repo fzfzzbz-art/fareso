@@ -190,6 +190,14 @@ WA_APIKEY_2      = _get("WA_APIKEY_2", "")
 
 SUPPORT_USERNAME = _get("SUPPORT_USERNAME", "@P_n_ij")
 
+SITE_TELEGRAM_SETUP_URL = _get("SITE_TELEGRAM_SETUP_URL", f"{SITE_URL}/telegram-setup")
+SITE_RELINK_BOT_USERNAME = str(_get("SITE_RELINK_BOT_USERNAME", "new_basha_bot") or "new_basha_bot").strip().lstrip("@")
+SITE_RELINK_BOT_START_PARAM = str(_get("SITE_RELINK_BOT_START_PARAM", "refresh_page") or "refresh_page").strip()
+SITE_RELINK_REFRESH_URL = (
+    f"https://t.me/{SITE_RELINK_BOT_USERNAME}?start={urllib.parse.quote(SITE_RELINK_BOT_START_PARAM)}"
+    if SITE_RELINK_BOT_USERNAME else ""
+)
+
 BOT_WORKER_THREADS = max(2, min(8, int(_get("BOT_WORKER_THREADS", str(_default_worker_threads())) or str(_default_worker_threads()))))
 FAST_RESPONSE_MULTIPLIER = max(1.0, float(_get("FAST_RESPONSE_MULTIPLIER", "2") or "2"))
 TEST_MODE_INTERVAL_SECONDS = max(180, int(_get("TEST_MODE_INTERVAL_SECONDS", "180") or "180"))
@@ -2744,6 +2752,24 @@ def _build_channel_post_markup() -> Optional[types.InlineKeyboardMarkup]:
     return mk
 
 
+def _get_external_bot_public_url(username: str, start_param: str = "") -> str:
+    clean_username = str(username or "").strip().lstrip("@")
+    if not clean_username:
+        return ""
+    suffix = f"?start={urllib.parse.quote(str(start_param))}" if start_param else ""
+    return f"https://t.me/{clean_username}{suffix}"
+
+
+def _build_telegram_refresh_markup() -> Optional[types.InlineKeyboardMarkup]:
+    mk = types.InlineKeyboardMarkup(row_width=1)
+    relink_url = _get_external_bot_public_url(SITE_RELINK_BOT_USERNAME, SITE_RELINK_BOT_START_PARAM)
+    if relink_url:
+        mk.add(types.InlineKeyboardButton(f"🤖 فتح @{SITE_RELINK_BOT_USERNAME}", url=relink_url))
+    if SITE_TELEGRAM_SETUP_URL:
+        mk.add(types.InlineKeyboardButton("🌐 فتح صفحة Telegram Setup", url=SITE_TELEGRAM_SETUP_URL))
+    return mk if getattr(mk, "keyboard", None) else None
+
+
 def _build_test_channel_post_markup() -> Optional[types.InlineKeyboardMarkup]:
     """أزرار ستايل الصورة لقناة الاختبار الخاصة."""
     main_url = str(TEST_MAIN_CHANNEL_URL or "").strip()
@@ -3146,6 +3172,8 @@ def sync_handler(message):
         bot.reply_to(message, "⛔ هذا الزر متاح للمسؤول فقط.")
         return
     _dev_fetch_from_site_and_report(message.chat.id)
+    _site_add_set_view_meta(message.from_user.id, entry_title="📥 جلب الأرقام داخل البوت", preferred_source_label="my/ranges + my/numbers + my_sms + portal_numbers", preferred_page_url="")
+    _launch_site_add_open_async(message.chat.id, message.from_user.id, refresh=True)
 
 def add_manual_prompt(message):
     platforms = _platform_picker_platforms()
@@ -4964,7 +4992,7 @@ def dev_fetch_site_callback(call):
         preferred_source_label='',
         preferred_page_url='',
     )
-    bot.answer_callback_query(call.id, "⏳ جاري تحديث دول الموقع الآن...")
+    bot.answer_callback_query(call.id, "⏳ جاري جلب الأرقام وعرضها داخل البوت الآن...")
     _launch_site_add_open_async(
         call.message.chat.id,
         call.from_user.id,
@@ -4994,6 +5022,27 @@ def dev_show_commands_callback(call):
         return
     bot.answer_callback_query(call.id)
     bot.send_message(call.message.chat.id, _developer_commands_text())
+
+def dev_new_basha_refresh_callback(call):
+    if call.from_user.id != ADMIN_ID:
+        bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
+        return
+    bot.answer_callback_query(call.id, "تم تجهيز أزرار التحديث")
+    relink_text = (
+        "🤖 <b>حل سريع لمشكلة Telegram Setup</b>\n\n"
+        f"إذا ظهرت في الموقع رسالة <code>Chat ID is no longer valid</code> أو <code>Chat not found</code>، اضغط أولاً على زر <b>@{html.escape(SITE_RELINK_BOT_USERNAME)}</b> ثم اضغط <b>Start</b> داخل البوت، وبعدها افتح صفحة الربط من الزر الثاني واعمل تحديث للصفحة.\n\n"
+        f"• البوت الخارجي: <code>@{html.escape(SITE_RELINK_BOT_USERNAME)}</code>\n"
+        f"• رابط الربط: <code>{html.escape(SITE_TELEGRAM_SETUP_URL)}</code>\n"
+        f"• Chat ID الحالي لهذه المحادثة: <code>{call.message.chat.id}</code>"
+    )
+    bot.send_message(
+        call.message.chat.id,
+        relink_text,
+        parse_mode="HTML",
+        reply_markup=_build_telegram_refresh_markup(),
+        disable_web_page_preview=True,
+    )
+
 
 def dev_export_all_txt_callback(call):
     """يُصدّر ملف TXT واحد يحتوي كل الأرقام مصنّفة حسب المنصة."""
@@ -6767,10 +6816,32 @@ def _report_site_platforms(chat_id: int):
         bot.send_message(chat_id, f"❌ حصل خطأ أثناء فتح my/ranges أو جلب الأرقام: {ranges_err}")
 
 
-def _fetch_site_codes_snapshot() -> Dict[str, Any]:
-    page_url = _get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages")
-    data_url = _get("MY_MESSAGES_DATA_URL", f"{SITE_URL}/my/messages/data")
-    payload = _site_datatable_json(_build_site_session(), page_url, data_url, length=1000)
+def _site_code_sources() -> List[Tuple[str, str, str]]:
+    sources = [
+        (
+            _get("MY_MESSAGES_URL", f"{SITE_URL}/my/messages"),
+            _get("MY_MESSAGES_DATA_URL", f"{SITE_URL}/my/messages/data"),
+            "my_messages",
+        ),
+        (
+            _get("TEST_MESSAGES_URL", f"{SITE_URL}/test/messages"),
+            _get("TEST_MESSAGES_DATA_URL", f"{SITE_URL}/test/messages/data"),
+            "test_messages",
+        ),
+    ]
+    deduped: List[Tuple[str, str, str]] = []
+    seen = set()
+    for page_url, data_url, source_name in sources:
+        key = (str(page_url or '').strip(), str(data_url or '').strip(), str(source_name or '').strip())
+        if not key[0] or key in seen:
+            continue
+        seen.add(key)
+        deduped.append(key)
+    return deduped
+
+
+def _fetch_site_code_rows_for_endpoint(session: requests.Session, page_url: str, data_url: str, source_name: str) -> Tuple[List[Dict[str, Any]], int]:
+    payload = _site_datatable_json(session, page_url, data_url, length=1000)
     rows: List[Dict[str, Any]] = []
     for raw_row in payload.get("data", []) or []:
         cells = _datatable_row_cells(raw_row)
@@ -6804,7 +6875,9 @@ def _fetch_site_codes_snapshot() -> Dict[str, Any]:
         platform_value = _normalize_platform(platform_seed) or _guess_platform_from_payload(range_name, platform_seed, message_text, combined_html, combined_text, raw_row) or GENERAL_PLATFORM_NAME
 
         time_seed = _row_lookup_first(raw_row, "time", "date", "created_at", "createdAt", "received_at", "receive_time", "updated_at", "sent_at") or padded_cells[7]
-        code_value = _extract_display_code_from_text(message_text or combined_text)
+        code_value = _extract_display_code_from_text(message_text or combined_text, platform_hint=platform_value)
+        if not code_value and combined_text:
+            code_value = _extract_code_from_text(combined_text, platform_hint=platform_value)
         rows.append({
             "range": range_name,
             "number": number_value,
@@ -6815,16 +6888,54 @@ def _fetch_site_codes_snapshot() -> Dict[str, Any]:
             "price": _strip_html_text(_row_lookup_first(raw_row, "price", "cost", "amount") or padded_cells[5]),
             "package": _strip_html_text(_row_lookup_first(raw_row, "package", "plan", "bundle", "offer") or padded_cells[6]),
             "time": _format_site_timestamp(time_seed),
+            "source": source_name,
+            "page_url": page_url,
         })
+    return rows, int(payload.get("recordsTotal", len(rows)) or len(rows))
 
-    if rows:
-        rows.sort(key=lambda row: str(row.get("time") or ""), reverse=True)
+
+def _fetch_site_codes_snapshot() -> Dict[str, Any]:
+    session = _build_site_session()
+    all_rows: List[Dict[str, Any]] = []
+    page_urls: List[str] = []
+    records_total = 0
+    last_error: Optional[Exception] = None
+    seen = set()
+
+    for page_url, data_url, source_name in _site_code_sources():
+        try:
+            rows, total = _fetch_site_code_rows_for_endpoint(session, page_url, data_url, source_name)
+            records_total += int(total or 0)
+            if page_url and page_url not in page_urls:
+                page_urls.append(page_url)
+            for row in rows:
+                key = (
+                    _normalize_number(row.get("number", "")),
+                    _normalize_platform(row.get("platform", "")),
+                    str(row.get("time") or ""),
+                    str(row.get("message") or ""),
+                    str(row.get("source") or ""),
+                )
+                if key in seen:
+                    continue
+                seen.add(key)
+                all_rows.append(row)
+        except Exception as source_err:
+            last_error = source_err
+            logger.debug(f"Site codes source failed ({source_name}): {source_err}")
+            continue
+
+    if not all_rows and last_error is not None:
+        raise last_error
+
+    if all_rows:
+        all_rows.sort(key=lambda row: str(row.get("time") or ""), reverse=True)
 
     return {
-        "page_url": page_url,
-        "data_url": data_url,
-        "records_total": int(payload.get("recordsTotal", len(rows)) or len(rows)),
-        "rows": rows,
+        "page_url": " | ".join(page_urls),
+        "page_urls": page_urls,
+        "records_total": records_total or len(all_rows),
+        "rows": all_rows,
     }
 
 
@@ -6858,7 +6969,7 @@ def _format_site_code_rows(title: str, rows: List[Dict[str, Any]], page_url: str
 def _report_site_codes(chat_id: int):
     try:
         data = _fetch_site_codes_snapshot()
-        text = _format_site_code_rows("💬 صفحة my/messages", data.get("rows", []), data.get("page_url", ""))
+        text = _format_site_code_rows("💬 صفحات الرسائل (my/messages + test/messages)", data.get("rows", []), data.get("page_url", ""))
         _chunked_send(chat_id, text)
     except Exception as codes_err:
         logger.exception(f"Site codes report error: {codes_err}")
@@ -6895,7 +7006,8 @@ def _fetch_latest_my_messages_code_for_number(number: str, platform_hint: str = 
         normalized_item["service"] = normalized_item["platform"]
         normalized_item["text"] = str(normalized_item.get("message") or "").strip()
         normalized_item["date"] = str(normalized_item.get("time") or "").strip()
-        normalized_item["source"] = "my_messages"
+        normalized_item["code"] = str(normalized_item.get("code") or _extract_display_code_from_text(normalized_item.get("text", ""), platform_hint=normalized_item.get("platform", "")) or _extract_code_from_text(normalized_item.get("text", ""), platform_hint=normalized_item.get("platform", ""))).strip()
+        normalized_item["source"] = str(normalized_item.get("source") or "my_messages").strip() or "my_messages"
         if hint and _platform_hint_matches(normalized_item.get("platform", ""), hint):
             exact_platform.append(normalized_item)
         else:
@@ -6936,7 +7048,7 @@ def dev_site_codes_callback(call):
     if call.from_user.id != ADMIN_ID:
         bot.answer_callback_query(call.id, "غير مصرح", show_alert=True)
         return
-    bot.answer_callback_query(call.id, "⏳ جاري فتح my/messages وجلب الأكواد...")
+    bot.answer_callback_query(call.id, "⏳ جاري فتح صفحات الرسائل وجلب الأكواد...")
     _report_site_codes(call.message.chat.id)
 
 
@@ -8032,7 +8144,8 @@ def _site_add_platforms_text(user_id: int) -> str:
         '♻️ تم استخدام آخر نتائج محفوظة مؤقتاً' if state.get('used_cached_fallback') else '✅ البيانات مباشرة من الموقع الآن',
         '',
         'اختَر الدولة من الأزرار تحت.',
-        'بعد ما تضغط على الدولة هيظهروا المنصات المرتبطة بيها، ولما تختار المنصة البوت هيزامن الأرقام ويخليها متاحة لكل المستخدمين.',
+        'بعد ما تضغط على الدولة هتشوف معاينة بالأرقام نفسها داخل البوت بدون ما تحتاج تدخل الموقع أو تنسخ الأرقام يدوياً.',
+        'ولما تختار المنصة البوت هيزامن كل أرقام الدولة ويخليها متاحة لكل المستخدمين.',
     ]
     return '\n'.join(lines)
 
@@ -8371,6 +8484,7 @@ def _test_platform_short_label(platform: str) -> str:
     normalized = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
     short_map = {
         "WhatsApp": "WA",
+        "WhatsApp Business": "WB",
         "Telegram": "TG",
         "Instagram": "IG",
         "TikTok": "TT",
@@ -8392,7 +8506,8 @@ def _test_platform_short_label(platform: str) -> str:
 def _test_platform_arabic_label(platform: str) -> str:
     normalized = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
     arabic_map = {
-        "WhatsApp": "واتساب للأعمال",
+        "WhatsApp": "واتساب الرسمي",
+        "WhatsApp Business": "واتساب الأعمال",
         "Telegram": "تيليجرام",
         "Instagram": "إنستغرام",
         "TikTok": "تيك توك",
@@ -9248,6 +9363,25 @@ def _display_platform_name(value: str) -> str:
     return normalized
 
 
+
+PLATFORM_CANONICAL_ALIASES.update({
+    "whatsapp official": "WhatsApp",
+    "official whatsapp": "WhatsApp",
+    "واتساب رسمي": "WhatsApp",
+    "واتساب الرسمي": "WhatsApp",
+    "whatsapp business": "WhatsApp Business",
+    "whatsappbusiness": "WhatsApp Business",
+    "business whatsapp": "WhatsApp Business",
+    "wa business": "WhatsApp Business",
+    "واتساب للأعمال": "WhatsApp Business",
+    "واتساب الاعمال": "WhatsApp Business",
+    "واتس اعمال": "WhatsApp Business",
+    "واتساب بيزنس": "WhatsApp Business",
+})
+PLATFORM_CODE_LENGTHS.setdefault("whatsapp business", (6, 6))
+PLATFORM_BUTTON_ICONS.setdefault("WhatsApp Business", "💼")
+DEMO_SERVICE_META.setdefault("WhatsApp Business", {"icon": "💼", "label": "WhatsApp Business"})
+
 def _clean_platform_name(value: str) -> str:
     name = re.sub(r'\s+', ' ', str(value or '').strip())
     if not name:
@@ -10020,6 +10154,10 @@ def _build_developer_panel_markup() -> types.InlineKeyboardMarkup:
     )
     mk.add(
         types.InlineKeyboardButton('➕ إضافة أرقام من الموقع', callback_data='dev_fetch_site'),
+        types.InlineKeyboardButton('📥 جلب الأرقام داخل البوت', callback_data='dev_fetch_site_inline'),
+    )
+    mk.add(
+        types.InlineKeyboardButton('🤖 تحديث @new_basha_bot', callback_data='dev_new_basha_refresh'),
         types.InlineKeyboardButton('🍪 إدارة الكوكيز', callback_data='dev_cookie_center'),
     )
     mk.add(
@@ -10054,7 +10192,8 @@ def _developer_commands_text() -> str:
         '• /deleteplatform ← حذف كل أرقام منصة\n'
         '• /confirm ← تأكيد حذف رقم من الانتظار\n'
         '• /siteplatforms ← فتح صفحة my/ranges وجلب الأرقام المحفوظة\n'
-        '• /sitecodes ← فتح صفحة my/messages وجلب الأكواد المحفوظة بالكامل\n\n'
+        '• /sitecodes ← فتح صفحة my/messages + test/messages وجلب الأكواد المحفوظة بالكامل\n'
+        '• من لوحة المطور: زر 🤖 تحديث @new_basha_bot يعيد فتح ربط Telegram Setup بسرعة عند ظهور مشكلة Chat ID\n\n'
         'ومن لوحة المطور تقدر تستخدم زر ➕ إضافة أرقام من الموقع ثم تختار الدولة من my_sms وبعدها المنصة ليتم تسجيل كل أرقام الدولة دفعة واحدة، وتقدر كمان تفتح my/ranges و my/messages مباشرة من اللوحة بعد تسجيل الدخول.'
     )
 
@@ -10221,6 +10360,8 @@ def _dispatch_callback_query(call):
         "dev_paid_summary": dev_paid_summary_callback,
         "dev_channel_info": dev_channel_info_callback,
         "dev_fetch_site": dev_fetch_site_callback,
+        "dev_fetch_site_inline": dev_fetch_site_callback,
+        "dev_new_basha_refresh": dev_new_basha_refresh_callback,
         "dev_edit_welcome": dev_edit_welcome_callback,
         "dev_show_commands": dev_show_commands_callback,
         "dev_export_all_txt": dev_export_all_txt_callback,
