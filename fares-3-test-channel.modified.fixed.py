@@ -95,24 +95,24 @@ _DEFAULTS = {
     "BOT_TOKEN": os.environ.get("BOT_TOKEN"),
     "ADMIN_ID": int(os.environ.get("ADMIN_ID", 6360098418)),
 
-    # روابط الموقع الحالية (Basha IPRN VAS)
-    "SITE_URL": os.environ.get("SITE_URL", "https://basha.cc"),
-    "HOME_URL": os.environ.get("HOME_URL", "https://basha.cc/home"),
-    "RANGES_URL": os.environ.get("RANGES_URL", "https://basha.cc/my/ranges"),
-    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://basha.cc/my/ranges/data"),
-    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://basha.cc/my/numbers"),
-    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://basha.cc/my/numbers/data"),
-    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://basha.cc/my/messages"),
-    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://basha.cc/my/messages/data"),
-    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://basha.cc/test/messages"),
-    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://basha.cc/test/messages/data"),
-    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://basha.cc/test/numbers"),
-    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://basha.cc/test/numbers/data"),
-    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://basha.cc/telegram-setup"),
+    # روابط الموقع الحالية (IVA SMS)
+    "SITE_URL": os.environ.get("SITE_URL", "https://www.ivasms.com"),
+    "HOME_URL": os.environ.get("HOME_URL", "https://www.ivasms.com/portal"),
+    "RANGES_URL": os.environ.get("RANGES_URL", "https://www.ivasms.com/my/ranges"),
+    "MY_RANGES_DATA_URL": os.environ.get("MY_RANGES_DATA_URL", "https://www.ivasms.com/my/ranges/data"),
+    "MY_NUMBERS_URL": os.environ.get("MY_NUMBERS_URL", "https://www.ivasms.com/my/numbers"),
+    "MY_NUMBERS_DATA_URL": os.environ.get("MY_NUMBERS_DATA_URL", "https://www.ivasms.com/my/numbers/data"),
+    "MY_MESSAGES_URL": os.environ.get("MY_MESSAGES_URL", "https://www.ivasms.com/my/messages"),
+    "MY_MESSAGES_DATA_URL": os.environ.get("MY_MESSAGES_DATA_URL", "https://www.ivasms.com/my/messages/data"),
+    "TEST_MESSAGES_URL": os.environ.get("TEST_MESSAGES_URL", "https://www.ivasms.com/test/messages"),
+    "TEST_MESSAGES_DATA_URL": os.environ.get("TEST_MESSAGES_DATA_URL", "https://www.ivasms.com/test/messages/data"),
+    "TEST_NUMBERS_URL": os.environ.get("TEST_NUMBERS_URL", "https://www.ivasms.com/test/numbers"),
+    "TEST_NUMBERS_DATA_URL": os.environ.get("TEST_NUMBERS_DATA_URL", "https://www.ivasms.com/test/numbers/data"),
+    "SITE_TELEGRAM_SETUP_URL": os.environ.get("SITE_TELEGRAM_SETUP_URL", "https://www.ivasms.com/telegram-setup"),
     "SITE_TELEGRAM_CHAT_ID": os.environ.get("SITE_TELEGRAM_CHAT_ID", os.environ.get("ADMIN_ID", "")),
 
     # بيانات الحساب (تُقرأ من البيئة)
-    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "ftatty88@gmail.com"),
+    "SITE_EMAIL": os.environ.get("SITE_EMAIL", "pimimas699@ekuali.com"),
     "SITE_PASS": os.environ.get("SITE_PASS", "123456789ff"),
     "PAYMENT_WALLET": os.environ.get("PAYMENT_WALLET", "THxRZPDScimXo7F3Cmsg2uyEp2saCF4Afc"),
 
@@ -1284,17 +1284,27 @@ def _restore_site_session_bootstrap(session: requests.Session) -> bool:
         return False
 
 def _build_site_session() -> requests.Session:
-    """يبني Session موحدة سريعة وتستخدم Connection Pool + bootstrap cache لتقليل التأخير."""
+    """يبني Session موحدة مع دعم كامل لتجاوز Cloudflare عبر الكوكيز."""
     session = requests.Session()
     _mount_session_adapters(session)
     session.headers.update({
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
             "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0 Safari/537.36"
+            "Chrome/124.0.0.0 Safari/537.36"
         ),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Sec-Ch-Ua": '"Google Chrome";v="124", "Not-A.Brand";v="99", "Chromium";v="124"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
         "X-Requested-With": "XMLHttpRequest",
         "Referer": SITE_URL,
     })
@@ -1302,16 +1312,25 @@ def _build_site_session() -> requests.Session:
     if API_TOKEN:
         session.headers["Authorization"] = f"Bearer {API_TOKEN}"
 
+    # تحميل الكوكيز (runtime أولاً لأنها الأحدث)
     loaded_from_file = _load_site_cookies(session)
     if not loaded_from_file:
         _apply_site_cookie(session, SITE_COOKIE or "")
+
+    # فحص cf_clearance - إذا موجود لنتجاوز Cloudflare مباشرة
+    has_cf = bool(_pick_cookie_value(session, "cf_clearance"))
+    if has_cf:
+        logger.info("✅ cf_clearance موجود - سيتم تجاوز Cloudflare تلقائياً")
 
     if _restore_site_session_bootstrap(session):
         return session
 
     try:
-        probe = session.get(f"{SITE_URL}/portal", timeout=12, allow_redirects=True)
-        if _is_authenticated_response(probe):
+        probe = session.get(f"{SITE_URL}/portal", timeout=14, allow_redirects=True)
+        if _is_cloudflare_response(probe):
+            logger.warning("⚠️ Cloudflare يحجب صفحة /portal - سيتم استخدام الكوكيز الحالية فقط")
+            # لا نحاول تسجيل الدخول عند وجود Cloudflare - نحتاج cf_clearance
+        elif _is_authenticated_response(probe):
             logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
             _persist_runtime_cookies_from_session(session, "probe_ok")
             _store_site_session_bootstrap(session)
@@ -1319,9 +1338,10 @@ def _build_site_session() -> requests.Session:
     except Exception as probe_err:
         logger.warning(f"Site probe warning: {probe_err}")
 
+    # محاولة تسجيل الدخول - دائماً نحاول (cf_clearance يتيح تجاوز Cloudflare في طلب التسجيل)
     if SITE_EMAIL and SITE_PASS:
         if _login_site_with_credentials(session):
-            _persist_runtime_cookies_from_session(session, "post_login")
+            _persist_runtime_cookies_from_session(session, "post_login_cf" if has_cf else "post_login")
             _store_site_session_bootstrap(session)
 
     return session
@@ -5808,6 +5828,17 @@ def _build_cookie_delete_result(removed_count: int, remaining_count: int, remove
     )
 
 
+def _invalidate_session_bootstrap():
+    """يبطل cache الجلسة لإجبار البوت على إعادة بناء session بالكوكيز الجديدة."""
+    try:
+        with _site_session_bootstrap_lock:
+            _site_session_bootstrap_cache["ok_until"] = 0.0
+            _site_session_bootstrap_cache["cookies"] = []
+        logger.info("🔄 تم إبطال session bootstrap cache - سيتم إعادة بناء الجلسة تلقائياً")
+    except Exception as inv_err:
+        logger.debug(f"Session bootstrap invalidation skipped: {inv_err}")
+
+
 def setcookies_command(message):
     if not is_admin(message):
         return
@@ -5816,7 +5847,8 @@ def setcookies_command(message):
     if payload_text:
         try:
             saved_count = _save_runtime_cookies(json.loads(payload_text), append=False)
-            bot.reply_to(message, f"✅ تم استبدال Runtime cookies بالكامل. العدد المحفوظ الآن: {saved_count}")
+            _invalidate_session_bootstrap()
+            bot.reply_to(message, f"✅ تم استبدال Runtime cookies بالكامل. العدد المحفوظ الآن: {saved_count}\n🔄 تم إعادة تهيئة الجلسة - سيتم استخدام الكوكيز الجديدة فوراً")
         except Exception as cookie_save_err:
             bot.reply_to(message, f"❌ فشل حفظ الكوكيز: {cookie_save_err}")
         return
@@ -5838,7 +5870,8 @@ def addcookies_command(message):
     if payload_text:
         try:
             saved_count = _save_runtime_cookies(json.loads(payload_text), append=True)
-            bot.reply_to(message, f"✅ تم دمج الكوكيز الجديدة مع الحالية بنجاح. الإجمالي الآن: {saved_count} كوكيز")
+            _invalidate_session_bootstrap()
+            bot.reply_to(message, f"✅ تم دمج الكوكيز الجديدة مع الحالية بنجاح. الإجمالي الآن: {saved_count} كوكيز\n🔄 تم إعادة تهيئة الجلسة - سيتم استخدام الكوكيز الجديدة فوراً")
         except Exception as cookie_save_err:
             bot.reply_to(message, f"❌ فشل إضافة الكوكيز: {cookie_save_err}")
         return
@@ -5864,7 +5897,8 @@ def _process_setcookies_step(message):
         return
     try:
         saved_count = _save_runtime_cookies(json.loads(_extract_cookie_json_text(text)), append=False)
-        bot.reply_to(message, f"✅ تم استبدال Runtime cookies بنجاح. العدد المحفوظ الآن: {saved_count}")
+        _invalidate_session_bootstrap()
+        bot.reply_to(message, f"✅ تم استبدال Runtime cookies بنجاح. العدد المحفوظ الآن: {saved_count}\n🔄 تم إعادة تهيئة الجلسة - سيتم استخدام الكوكيز الجديدة فوراً")
     except Exception as cookie_step_err:
         bot.reply_to(message, f"❌ JSON غير صالح أو فيه مشكلة: {cookie_step_err}")
 
@@ -5881,7 +5915,8 @@ def _process_addcookies_step(message):
         return
     try:
         saved_count = _save_runtime_cookies(json.loads(_extract_cookie_json_text(text)), append=True)
-        bot.reply_to(message, f"✅ تم دمج الكوكيز الجديدة بنجاح. الإجمالي الآن: {saved_count}")
+        _invalidate_session_bootstrap()
+        bot.reply_to(message, f"✅ تم دمج الكوكيز الجديدة بنجاح. الإجمالي الآن: {saved_count}\n🔄 تم إعادة تهيئة الجلسة - سيتم استخدام الكوكيز الجديدة فوراً")
     except Exception as cookie_step_err:
         bot.reply_to(message, f"❌ JSON غير صالح أو فيه مشكلة: {cookie_step_err}")
 
@@ -6064,10 +6099,9 @@ def dev_cookie_clear_callback(call):
     try:
         if RUNTIME_COOKIES_FILE.exists():
             RUNTIME_COOKIES_FILE.unlink()
-            bot.send_message(call.message.chat.id, "🗑️ تم حذف Runtime cookies. تم الرجوع للكوكيز المدمجة داخل الملف.")
-            log_event("COOKIES_CLEARED", {"by": call.from_user.id})
-        else:
-            bot.send_message(call.message.chat.id, "ℹ️ لا يوجد runtime_cookies.json حالياً.")
+        _invalidate_session_bootstrap()
+        bot.send_message(call.message.chat.id, "🗑️ تم حذف Runtime cookies. تم الرجوع للكوكيز المدمجة داخل الملف.")
+        log_event("COOKIES_CLEARED", {"by": call.from_user.id})
     except Exception as clear_cookie_err:
         bot.send_message(call.message.chat.id, f"❌ تعذر حذف ملف الكوكيز: {clear_cookie_err}")
 
@@ -6137,12 +6171,35 @@ def _site_login_step_password(message):
         import requests as _req_mod
         session = _req_mod.Session()
         session.headers.update({
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.7",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
             "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Sec-Ch-Ua": '"Google Chrome";v="124", "Not-A.Brand";v="99", "Chromium";v="124"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
         })
+        # نسخ الكوكيز من runtime للجلسة الجديدة (cf_clearance إن وجد)
+        _load_runtime_cookies(session)
+        _refresh_site_security_headers(session)
         login_url = f"{SITE_URL}/login"
         resp = session.get(login_url, timeout=15, allow_redirects=True)
+        # تحقق من Cloudflare أولاً
+        if _is_cloudflare_response(resp):
+            bot.send_message(
+                message.chat.id,
+                "⚠️ <b>Cloudflare يحجب صفحة login!</b>\n\n"
+                "للتجاوز تحتاج لتصفح الموقع يدوياً مرة واحدة \u062b\u0645 نسخ الكوكيز وإرسالها عبر /setcookies\n\n"
+                "تأكد من إضافة <b>cf_clearance</b> ضمن الكوكيز.",
+                parse_mode="HTML",
+            )
+            return
         # استخراج CSRF token
         csrf = _resolve_csrf_token(session, resp.text, resp)
         payload = {
@@ -6165,6 +6222,7 @@ def _site_login_step_password(message):
                 })
             if items:
                 _save_runtime_cookies(items, append=False)
+                _invalidate_session_bootstrap()
                 cookies_txt = "\n".join([f"  • {c['name']} = {c['value'][:12]}..." for c in items[:6]])
                 bot.send_message(
                     message.chat.id,
@@ -10301,7 +10359,7 @@ def _build_developer_panel_markup() -> types.InlineKeyboardMarkup:
         types.InlineKeyboardButton('📥 جلب الأرقام داخل البوت', callback_data='dev_fetch_site_inline'),
     )
     mk.add(
-        types.InlineKeyboardButton('🤖 تحديث @new_basha_bot', callback_data='dev_new_basha_refresh'),
+        types.InlineKeyboardButton('🤖 تحديث رابط الموقع', callback_data='dev_new_basha_refresh'),
         types.InlineKeyboardButton('🍪 إدارة الكوكيز', callback_data='dev_cookie_center'),
     )
     mk.add(
@@ -10337,7 +10395,7 @@ def _developer_commands_text() -> str:
         '• /confirm ← تأكيد حذف رقم من الانتظار\n'
         '• /siteplatforms ← فتح صفحة my/ranges وجلب الأرقام المحفوظة\n'
         '• /sitecodes ← فتح صفحة my/messages + test/messages وجلب الأكواد المحفوظة بالكامل\n'
-        '• من لوحة المطور: زر 🤖 تحديث @new_basha_bot يعيد فتح ربط Telegram Setup بسرعة عند ظهور مشكلة Chat ID\n\n'
+        '• من لوحة المطور: زر 🤖 تحديث رابط الموقع يعيد فتح ربط Telegram Setup بسرعة عند ظهور مشكلة Chat ID\n\n'
         'ومن لوحة المطور تقدر تستخدم زر ➕ إضافة أرقام من الموقع ثم تختار الدولة من my_sms وبعدها المنصة ليتم تسجيل كل أرقام الدولة دفعة واحدة، وتقدر كمان تفتح my/ranges و my/messages مباشرة من اللوحة بعد تسجيل الدخول.'
     )
 
