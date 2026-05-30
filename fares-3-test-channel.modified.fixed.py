@@ -45,6 +45,11 @@ import traceback
 
 import requests
 
+try:
+    import cloudscraper  # type: ignore
+except Exception:
+    cloudscraper = None
+
 from requests.adapters import HTTPAdapter
 
 try:
@@ -614,6 +619,35 @@ def setup_logging() -> logging.Logger:
 
 logger = setup_logging()
 
+_log_throttle_lock = threading.Lock()
+_log_throttle_state: Dict[str, float] = {}
+
+def _log_throttled(level: str, key: str, message: str, interval_seconds: float = 60.0) -> bool:
+    try:
+        interval = max(0.0, float(interval_seconds or 0.0))
+    except Exception:
+        interval = 60.0
+    now = time.time()
+    with _log_throttle_lock:
+        last_ts = float(_log_throttle_state.get(key) or 0.0)
+        if interval > 0 and (now - last_ts) < interval:
+            return False
+        _log_throttle_state[key] = now
+    method = getattr(logger, str(level or 'info').lower(), logger.info)
+    method(message)
+    return True
+
+def _new_http_session() -> requests.Session:
+    if cloudscraper is not None:
+        try:
+            scraper = cloudscraper.create_scraper(
+                browser={"browser": "chrome", "platform": "windows", "desktop": True}
+            )
+            return scraper
+        except Exception as scraper_err:
+            _log_throttled('debug', 'cloudscraper_init_failed', f'cloudscraper init skipped: {scraper_err}', 300.0)
+    return requests.Session()
+
 def _install_runtime_guardrails_once() -> None:
     """يضمن ظهور الأخطاء في لوجات الاستضافة بدل اختفائها بصمت."""
     if getattr(_install_runtime_guardrails_once, "_installed", False):
@@ -961,7 +995,7 @@ def _load_cookie_items(session: requests.Session, items, source_label: str) -> b
 
     if loaded:
         _refresh_site_security_headers(session)
-        logger.info(f"🍪 تم تحميل {loaded} كوكي من {source_label}")
+        _log_throttled('info', f'cookies_loaded:{source_label}', f"🍪 تم تحميل {loaded} كوكي من {source_label}", 120.0)
         return True
     return False
 
@@ -1156,27 +1190,21 @@ def _login_site_with_credentials(session: requests.Session) -> bool:
         return False
     try:
         login_url = f"{SITE_URL}/login"
+        _refresh_site_security_headers(session)
         resp = session.get(login_url, timeout=15, allow_redirects=True)
         if _is_authenticated_response(resp):
             logger.info("✅ الجلسة الحالية مسجّلة دخول بالفعل")
             return True
-        if resp.status_code != 200:
-            logger.warning(f"Login page unavailable: {resp.status_code}")
+
+        status_code = int(getattr(resp, 'status_code', 0) or 0)
+        if status_code == 403 or _is_cloudflare_response(resp):
+            _log_throttled('warning', 'site_login_page_403', f"Login page unavailable: {status_code}", 90.0)
+            return False
+        if status_code != 200:
+            _log_throttled('warning', f'site_login_page_status:{status_code}', f"Login page unavailable: {status_code}", 90.0)
             return False
 
-        csrf_match = re.search(
-            r'name=["\']_token["\']\s+value=["\']([^"\']+)["\']',
-            resp.text,
-            flags=re.IGNORECASE,
-        )
-        if not csrf_match:
-            csrf_match = re.search(
-                r'<meta\s+name=["\']csrf-token["\']\s+content=["\']([^"\']+)["\']',
-                resp.text,
-                flags=re.IGNORECASE,
-            )
-        csrf = csrf_match.group(1) if csrf_match else ""
-
+        csrf = _resolve_csrf_token(session, getattr(resp, 'text', '') or '', resp)
         payload = {
             "_token": csrf,
             "email": SITE_EMAIL,
@@ -1187,18 +1215,21 @@ def _login_site_with_credentials(session: requests.Session) -> bool:
             "Referer": login_url,
             "Origin": SITE_URL,
         }
+        if csrf:
+            headers['X-CSRF-TOKEN'] = csrf
+            headers['X-XSRF-TOKEN'] = csrf
         post_resp = session.post(login_url, data=payload, headers=headers, timeout=20, allow_redirects=True)
-        _refresh_xsrf_header(session)
+        _refresh_site_security_headers(session)
 
         if post_resp.status_code == 200 and _is_authenticated_response(post_resp):
             logger.info("✅ تم تسجيل الدخول للموقع بنجاح عبر البريد/كلمة المرور")
             _persist_runtime_cookies_from_session(session, "auto_login")
             return True
 
-        logger.warning("⚠️ تعذر تسجيل الدخول تلقائياً، سيُستخدم الـ cookie الموجود إن كان صالحاً")
+        _log_throttled('warning', 'site_auto_login_failed', "⚠️ تعذر تسجيل الدخول تلقائياً، سيُستخدم الـ cookie الموجود إن كان صالحاً", 90.0)
         return False
     except Exception as login_err:
-        logger.warning(f"Auto login failed: {login_err}")
+        _log_throttled('warning', 'site_auto_login_exception', f"Auto login failed: {login_err}", 90.0)
         return False
 
 _SITE_SESSION_BOOTSTRAP_TTL_SECONDS = max(15.0, float(str(_get("SITE_SESSION_BOOTSTRAP_TTL_SECONDS", "90") or "90").strip() or "90"))
@@ -1284,8 +1315,8 @@ def _restore_site_session_bootstrap(session: requests.Session) -> bool:
         return False
 
 def _build_site_session() -> requests.Session:
-    """يبني Session موحدة مع دعم كامل لتجاوز Cloudflare عبر الكوكيز."""
-    session = requests.Session()
+    """يبني Session موحدة مع دعم أفضل لملفات الكوكيز و Cloudflare."""
+    session = _new_http_session()
     _mount_session_adapters(session)
     session.headers.update({
         "User-Agent": (
@@ -1312,38 +1343,58 @@ def _build_site_session() -> requests.Session:
     if API_TOKEN:
         session.headers["Authorization"] = f"Bearer {API_TOKEN}"
 
-    # تحميل الكوكيز (runtime أولاً لأنها الأحدث)
     loaded_from_file = _load_site_cookies(session)
     if not loaded_from_file:
         _apply_site_cookie(session, SITE_COOKIE or "")
 
-    # فحص cf_clearance - إذا موجود لنتجاوز Cloudflare مباشرة
     has_cf = bool(_pick_cookie_value(session, "cf_clearance"))
     if has_cf:
-        logger.info("✅ cf_clearance موجود - سيتم تجاوز Cloudflare تلقائياً")
+        _log_throttled('info', 'cf_clearance_present', "✅ cf_clearance موجود - سيتم تجاوز Cloudflare تلقائياً", 180.0)
 
     if _restore_site_session_bootstrap(session):
         return session
 
     try:
         probe = session.get(f"{SITE_URL}/portal", timeout=14, allow_redirects=True)
-        if _is_cloudflare_response(probe):
-            logger.warning("⚠️ Cloudflare يحجب صفحة /portal - سيتم استخدام الكوكيز الحالية فقط")
-            # لا نحاول تسجيل الدخول عند وجود Cloudflare - نحتاج cf_clearance
-        elif _is_authenticated_response(probe):
+        if _is_authenticated_response(probe):
             logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
             _persist_runtime_cookies_from_session(session, "probe_ok")
             _store_site_session_bootstrap(session)
             return session
+        if _is_cloudflare_response(probe):
+            _log_throttled('warning', 'portal_probe_cloudflare', "⚠️ Cloudflare يحجب صفحة /portal - سيتم استخدام الكوكيز الحالية فقط", 120.0)
+        elif int(getattr(probe, 'status_code', 0) or 0) in {401, 403}:
+            _log_throttled('warning', 'portal_probe_forbidden', f"⚠️ تعذر فتح /portal: {getattr(probe, 'status_code', 'unknown')}", 120.0)
     except Exception as probe_err:
-        logger.warning(f"Site probe warning: {probe_err}")
+        _log_throttled('warning', 'site_probe_warning', f"Site probe warning: {probe_err}", 120.0)
 
-    # محاولة تسجيل الدخول - دائماً نحاول (cf_clearance يتيح تجاوز Cloudflare في طلب التسجيل)
-    if SITE_EMAIL and SITE_PASS:
+    if SITE_EMAIL and SITE_PASS and not has_cf:
         if _login_site_with_credentials(session):
-            _persist_runtime_cookies_from_session(session, "post_login_cf" if has_cf else "post_login")
+            _persist_runtime_cookies_from_session(session, "post_login")
             _store_site_session_bootstrap(session)
+            return session
 
+    return session
+
+def _clone_site_session(base_session: Optional[requests.Session] = None) -> requests.Session:
+    source = base_session or _build_site_session()
+    session = _new_http_session()
+    _mount_session_adapters(session)
+    try:
+        session.headers.update(dict(getattr(source, 'headers', {}) or {}))
+    except Exception:
+        pass
+    for cookie in list(getattr(source, 'cookies', []) or []):
+        try:
+            session.cookies.set(
+                getattr(cookie, 'name', ''),
+                getattr(cookie, 'value', ''),
+                domain=getattr(cookie, 'domain', '') or _cookie_host(),
+                path=getattr(cookie, 'path', '/') or '/',
+            )
+        except Exception:
+            continue
+    _refresh_site_security_headers(session)
     return session
 
 _json_lock = threading.RLock()
@@ -2471,67 +2522,38 @@ def _fetch_numbers_from_portal(session: requests.Session) -> List[Dict]:
     seen_numbers = set()
     endpoint = f"{SITE_URL}/portal/numbers"
     page_size = max(100, min(1000, int(_get("SITE_ADD_PORTAL_PAGE_SIZE", "300") or "300")))
-    max_pages = max(1, min(25, int(_get("SITE_ADD_PORTAL_MAX_PAGES", "8") or "8")))
-    soft_timeout = max(6.0, float(_get("SITE_ADD_PORTAL_SOFT_TIMEOUT_SECONDS", "12") or "12"))
-    started_at = time.time()
+
     try:
-        for page_idx in range(max_pages):
-            if (time.time() - started_at) >= soft_timeout:
-                logger.warning(f"Portal datatable fetch stopped after {soft_timeout}s to keep bot responsive")
-                break
-            start = page_idx * page_size
-            resp = session.get(
-                endpoint,
-                params=_portal_numbers_datatable_params(page_size, start=start, draw=page_idx + 1),
-                headers={
-                    "Accept": "application/json, text/javascript, */*; q=0.01",
-                    "X-Requested-With": "XMLHttpRequest",
-                },
-                timeout=min(10, max(6, int(soft_timeout))),
-            )
-            logger.info(f"Portal datatable {endpoint} page={page_idx + 1} start={start} → {resp.status_code}")
-            if resp.status_code != 200 or "json" not in (resp.headers.get("content-type", "").lower()):
-                break
-
-            payload = resp.json()
-            rows = payload.get("data", []) or []
-            if not rows:
-                break
-
-            for item in rows:
-                if not isinstance(item, dict):
-                    continue
-                number = _normalize_number(str(item.get("Number") or item.get("number") or item.get("phone") or "").strip())
-                if not number or number in seen_numbers:
-                    continue
-                seen_numbers.add(number)
-                platform = _guess_platform_from_payload(
-                    item.get("range"),
-                    item.get("platform"),
-                    item.get("service"),
-                    item.get("A2P"),
-                    item,
-                ) or GENERAL_PLATFORM_NAME
-                collected.append({
-                    "number": number,
-                    "platform": platform,
-                    "site_section": str(item.get("range") or item.get("platform") or item.get("service") or "").strip(),
-                    "source": "portal_json",
-                    "added_at": time.ctime(),
-                    "country_name": str(item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
-                    "country_name_ar": str(item.get("country_name_ar") or item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
-                    "country": str(item.get("country") or item.get("country_name") or "").strip(),
-                    "country_flag": str(item.get("country_flag") or "").strip(),
-                    "country_code": str(item.get("country_code") or item.get("countryCode") or "").strip(),
-                })
-
-            total_rows = int(payload.get("recordsFiltered") or payload.get("recordsTotal") or 0)
-            if total_rows and (start + len(rows)) >= total_rows:
-                break
-            if len(rows) < page_size:
-                break
+        payload = _site_datatable_json(session, endpoint, endpoint, length=page_size)
+        rows = payload.get("data", []) or []
+        for item in rows:
+            if not isinstance(item, dict):
+                continue
+            number = _normalize_number(str(item.get("Number") or item.get("number") or item.get("phone") or item.get("msisdn") or "").strip())
+            if not number or number in seen_numbers:
+                continue
+            seen_numbers.add(number)
+            platform = _guess_platform_from_payload(
+                item.get("range"),
+                item.get("platform"),
+                item.get("service"),
+                item.get("A2P"),
+                item,
+            ) or GENERAL_PLATFORM_NAME
+            collected.append({
+                "number": number,
+                "platform": platform,
+                "site_section": str(item.get("range") or item.get("platform") or item.get("service") or "").strip(),
+                "source": "portal_json",
+                "added_at": time.ctime(),
+                "country_name": str(item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
+                "country_name_ar": str(item.get("country_name_ar") or item.get("country_name") or item.get("country") or item.get("country_label") or "").strip(),
+                "country": str(item.get("country") or item.get("country_name") or "").strip(),
+                "country_flag": str(item.get("country_flag") or "").strip(),
+                "country_code": str(item.get("country_code") or item.get("countryCode") or "").strip(),
+            })
     except Exception as portal_err:
-        logger.warning(f"Portal datatable fetch failed: {portal_err}")
+        _log_throttled('warning', 'portal_datatable_fetch_failed', f"Portal datatable fetch failed: {portal_err}", 90.0)
     return _dedupe_numbers(collected)
 
 def _number_item_key(item: Dict) -> Tuple[str, str]:
@@ -6470,10 +6492,15 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
     page_resp = session.get(page_url, timeout=20, allow_redirects=True)
     page_text = getattr(page_resp, "text", "") or ""
     final_url = str(getattr(page_resp, "url", "") or "")
-    if page_resp.status_code != 200 or "/login" in final_url.lower() or _looks_like_guest_page(page_text):
+
+    if "/login" in final_url.lower() or _looks_like_guest_page(page_text):
         raise RuntimeError("الجلسة غير مسجلة دخول أو انتهت صلاحيتها. سجّل الدخول للموقع من لوحة المطور أولاً.")
 
+    page_status = int(getattr(page_resp, 'status_code', 0) or 0)
+    page_forbidden = page_status in {401, 403, 429, 503}
+    page_cloudflare = _is_cloudflare_response(page_resp)
     csrf = _resolve_csrf_token(session, page_text, page_resp)
+
     lengths = []
     for candidate in (int(length or 1000), 1000, 500, 250, 100):
         if candidate > 0 and candidate not in lengths:
@@ -6494,7 +6521,7 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
     last_error: Optional[Exception] = None
     request_methods = ("post", "get")
     endpoint_candidates: List[str] = []
-    for candidate in [data_url] + [
+    for candidate in [data_url, page_url] + [
         link for link in _extract_links_from_html(page_text)
         if any(token in link.lower() for token in ("/data", "datatable", "/messages", "/numbers"))
     ]:
@@ -6508,6 +6535,7 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
             for method in request_methods:
                 headers = _site_ajax_headers(page_url)
                 headers["Origin"] = SITE_URL
+                headers["Accept"] = "application/json, text/plain, text/html, */*"
                 if csrf:
                     headers["X-CSRF-TOKEN"] = csrf
                     headers["X-XSRF-TOKEN"] = csrf
@@ -6528,7 +6556,17 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
                             timeout=25,
                             allow_redirects=True,
                         )
-                    resp.raise_for_status()
+
+                    status_code = int(getattr(resp, 'status_code', 0) or 0)
+                    if status_code != 200:
+                        if endpoint_url == data_url or endpoint_url == page_url:
+                            _log_throttled('info', f'datatable_status:{endpoint_url}:{status_code}', f"Portal datatable {endpoint_url} → {status_code}", 90.0)
+                        if _is_cloudflare_response(resp):
+                            last_error = RuntimeError(f"Cloudflare blocked {endpoint_url} [{status_code}]")
+                        else:
+                            last_error = RuntimeError(f"HTTP {status_code} @ {endpoint_url}")
+                        continue
+
                     content_type = (resp.headers.get("content-type", "") or "").lower()
                     response_text = getattr(resp, "text", "") or ""
                     if "json" in content_type:
@@ -6564,6 +6602,10 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
             "fallback": "page_html_table",
         }
 
+    if page_cloudflare:
+        raise RuntimeError("Cloudflare يمنع الوصول للصفحة. حدّث runtime_cookies.json وأضف cf_clearance صالح.")
+    if page_forbidden:
+        raise RuntimeError(f"تعذر الوصول للصفحة. الخادم أعاد الحالة {page_status}.")
     raise RuntimeError(f"تعذر جلب بيانات الصفحة: {last_error or 'استجابة غير متوقعة'}")
 
 
@@ -7785,7 +7827,15 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
     if not _is_authenticated_response(page_resp):
         status_code = getattr(page_resp, 'status_code', 'unknown')
         if _is_cloudflare_response(page_resp):
-            raise RuntimeError('تعذر فتح صفحة my_sms بسبب Cloudflare. أضف cf_clearance لو متاح أو حدّث الـ runtime cookies.')
+            try:
+                return _fetch_numbers_from_portal(session)
+            except Exception:
+                raise RuntimeError('تعذر فتح صفحة my_sms بسبب Cloudflare. أضف cf_clearance لو متاح أو حدّث الـ runtime cookies.')
+        if str(status_code) == '403':
+            try:
+                return _fetch_numbers_from_portal(session)
+            except Exception:
+                pass
         raise RuntimeError(f'تعذر فتح صفحة my_sms. الحالة الحالية: {status_code}')
 
     collected: List[Dict] = []
@@ -7802,6 +7852,7 @@ def _fetch_numbers_from_live_my_sms(session: Optional[requests.Session] = None) 
     }
     if csrf:
         headers['X-CSRF-TOKEN'] = csrf
+        headers['X-XSRF-TOKEN'] = csrf
 
     page_size = max(100, min(500, int(_get('SITE_ADD_PORTAL_PAGE_SIZE', '300') or '300')))
     payload_variants = []
@@ -7994,7 +8045,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
         if not jobs:
             return rows_accum, counts, labels, urls
 
-        max_workers = max(1, min(4, len(jobs)))
+        max_workers = max(1, min(2, len(jobs)))
         executor = ThreadPoolExecutor(max_workers=max_workers, thread_name_prefix='siteadd')
         future_map = {executor.submit(loader): (label, url) for label, url, loader in jobs}
         pending = set(future_map.keys())
@@ -8016,7 +8067,7 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
                     try:
                         rows = future.result() or []
                     except Exception as source_err:
-                        logger.warning(f'site add source failed [{label}]: {source_err}')
+                        _log_throttled('warning', f'site_add_source_failed:{label}:{source_err}', f'site add source failed [{label}]: {source_err}', 90.0)
                         rows = []
                     if rows:
                         rows_accum.extend(rows)
@@ -8025,25 +8076,26 @@ def _build_site_platform_number_dataset(refresh: bool = False) -> Dict:
                         urls.append(url)
                         logger.info(f'site add source {label}: {len(rows)} رقم')
                     else:
-                        logger.info(f'site add source {label}: 0 رقم')
+                        logger.debug(f'site add source {label}: 0 رقم')
 
             if pending:
-                logger.warning(f'site add source timeout after {timeout_seconds}s')
+                _log_throttled('warning', 'site_add_source_timeout', f'site add source timeout after {timeout_seconds}s', 90.0)
                 for future in list(pending):
                     label, _url = future_map[future]
                     future.cancel()
-                    logger.warning(f'site add source cancelled بسبب البطء: {label}')
+                    _log_throttled('warning', f'site_add_source_cancelled:{label}', f'site add source cancelled بسبب البطء: {label}', 90.0)
         finally:
             executor.shutdown(wait=False, cancel_futures=True)
 
         return rows_accum, counts, labels, urls
 
     for attempt_index in range(attempts):
+        base_site_session = _build_site_session()
         quick_jobs = [
-            ('my_ranges', _get("RANGES_URL", f'{SITE_URL}/my/ranges'), lambda: _fetch_numbers_from_site_ranges(_build_site_session())),
-            ('my_numbers', _get("MY_NUMBERS_URL", f'{SITE_URL}/my/numbers'), lambda: _fetch_numbers_from_my_numbers_page(_build_site_session())),
-            ('my_sms', SITE_ADD_SOURCE_PAGE, lambda: _fetch_numbers_from_live_my_sms(_build_site_session())),
-            ('portal_numbers', f'{SITE_URL}/portal/numbers', lambda: _fetch_numbers_from_portal(_build_site_session())),
+            ('my_ranges', _get("RANGES_URL", f'{SITE_URL}/my/ranges'), lambda base=base_site_session: _fetch_numbers_from_site_ranges(_clone_site_session(base))),
+            ('my_numbers', _get("MY_NUMBERS_URL", f'{SITE_URL}/my/numbers'), lambda base=base_site_session: _fetch_numbers_from_my_numbers_page(_clone_site_session(base))),
+            ('my_sms', SITE_ADD_SOURCE_PAGE, lambda base=base_site_session: _fetch_numbers_from_live_my_sms(_clone_site_session(base))),
+            ('portal_numbers', f'{SITE_URL}/portal/numbers', lambda base=base_site_session: _fetch_numbers_from_portal(_clone_site_session(base))),
         ]
         all_rows, source_counts, successful_sources, page_urls = _run_source_jobs(quick_jobs, SITE_ADD_FAST_SOURCE_TIMEOUT_SECONDS)
 
@@ -9628,11 +9680,8 @@ def _platform_label_loose(value: str) -> str:
 
 
 def _load_site_cookies(session: requests.Session) -> bool:
-    """يحمّل كوكيز الموقع بترتيب مرن: المدمجة أولاً ثم runtime ثم الملفات المخصصة ثم SITE_COOKIE."""
+    """يحمّل كوكيز الموقع بترتيب صحيح: runtime أولاً ثم الملفات/البيئة ثم المدمجة كحل أخير."""
     loaded_any = False
-
-    if _load_cookie_items(session, EMBEDDED_SITE_COOKIES, "الكوكيز الجديدة المدمجة داخل الملف"):
-        loaded_any = True
 
     if _load_runtime_cookies(session):
         loaded_any = True
@@ -9643,9 +9692,12 @@ def _load_site_cookies(session: requests.Session) -> bool:
     raw_cookie = str(SITE_COOKIE or "").strip()
     if raw_cookie:
         _apply_site_cookie(session, raw_cookie)
-        if _pick_cookie_value(session, "ivas_sms_session", "laravel_session", "session", "SESSION", "site_session"):
-            logger.info("🍪 تم تحميل كوكي الجلسة من SITE_COOKIE")
+        if _pick_cookie_value(session, "ivas_sms_session", "laravel_session", "session", "SESSION", "site_session", "cf_clearance"):
+            _log_throttled('info', 'site_cookie_loaded', "🍪 تم تحميل كوكي الجلسة من SITE_COOKIE", 120.0)
             loaded_any = True
+
+    if not loaded_any and _load_cookie_items(session, EMBEDDED_SITE_COOKIES, "الكوكيز الجديدة المدمجة داخل الملف"):
+        loaded_any = True
 
     if loaded_any:
         _refresh_site_security_headers(session)
