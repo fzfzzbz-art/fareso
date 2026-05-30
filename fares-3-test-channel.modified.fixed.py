@@ -1732,17 +1732,23 @@ def _extract_sms_entries(sms_html: str) -> List[Dict]:
 
     return entries
 
-def _extract_code_from_text(raw_text: str) -> str:
+def _extract_code_from_text(raw_text: str, platform_hint: str = '') -> str:
+    """يستخرج كود التحقق من النص مع مراعاة طول الكود الصحيح للمنصة."""
     text_value = _strip_html_text(raw_text or '')
     if not text_value:
         return ''
+    # تحديد نطاق الطول بناءً على المنصة
+    try:
+        min_len, max_len = _get_platform_code_range(platform_hint) if platform_hint else (4, 8)
+    except Exception:
+        min_len, max_len = 4, 8
     patterns = [
         re.compile(
-            r"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|code is|your code)"
-            r"\s*[:\-]?\s*([0-9]{4,8})"
+            rf"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|code is|your code)"
+            rf"\s*[:\-]?\s*([0-9]{{{min_len},{max_len}}})"
         ),
-        re.compile(r"([0-9]{5,8})"),
-        re.compile(r"(?<!\d)([0-9]{4,8})(?!\d)"),
+        re.compile(rf"([0-9]{{{max(5,min_len)},{max_len}}})"),
+        re.compile(rf"(?<!\d)([0-9]{{{min_len},{max_len}}})(?!\d)"),
     ]
     clean = re.sub(r"[^\w\s\u0600-\u06FF:،-]", " ", text_value)
     for rx in patterns:
@@ -1752,7 +1758,9 @@ def _extract_code_from_text(raw_text: str) -> str:
         code_value = str(match.group(1) or '').strip()
         if re.match(r"^(19|20)\d{2}$", code_value):
             continue
-        return code_value
+        digits_only = re.sub(r'\D', '', code_value)
+        if min_len <= len(digits_only) <= max_len:
+            return code_value
     return ''
 
 
@@ -2176,6 +2184,77 @@ PLATFORM_CANONICAL_ALIASES = {
     "تيك توك": "TikTok",
     "تيكتوك": "TikTok",
 }
+
+# ── طول الكود المتوقع لكل منصة (min_len, max_len) ──────────────────────────
+PLATFORM_CODE_LENGTHS: dict = {
+    "whatsapp":   (6, 6),
+    "telegram":   (5, 5),
+    "instagram":  (6, 6),
+    "facebook":   (6, 8),
+    "tiktok":     (6, 6),
+    "snapchat":   (6, 6),
+    "twitter":    (6, 8),
+    "x":          (6, 8),
+    "google":     (6, 8),
+    "gmail":      (6, 8),
+    "microsoft":  (6, 8),
+    "outlook":    (6, 8),
+    "apple":      (6, 6),
+    "icloud":     (6, 6),
+    "amazon":     (6, 6),
+    "uber":       (4, 6),
+    "careem":     (4, 6),
+    "linkedin":   (6, 6),
+    "discord":    (6, 8),
+    "binance":    (6, 6),
+    "bybit":      (6, 6),
+    "coinbase":   (6, 8),
+    "steam":      (5, 5),
+}
+
+def _get_platform_code_range(platform: str):
+    """يرجع (min_len, max_len) لطول كود المنصة المحددة."""
+    key = str(_platform_alias_key(_normalize_platform(platform or '')) or '').lower()
+    for plat_key, lengths in PLATFORM_CODE_LENGTHS.items():
+        if plat_key in key:
+            return lengths
+    return (4, 8)
+
+def _validate_code_length_for_platform(code: str, platform: str) -> bool:
+    """يتحقق أن طول الكود صحيح للمنصة."""
+    digits = re.sub(r'\D', '', str(code or ''))
+    min_len, max_len = _get_platform_code_range(platform)
+    return min_len <= len(digits) <= max_len
+
+def _extract_code_with_length(text_raw: str, min_len: int = 4, max_len: int = 8) -> str:
+    """يستخرج أول كود بطول محدد من النص."""
+    from html import unescape
+    try:
+        clean = re.sub(r'[^\w\s\u0600-\u06FF:،-]', ' ', _strip_html_text(str(text_raw or '')))
+    except Exception:
+        clean = str(text_raw or '')
+    patterns_list = [
+        re.compile(
+            rf'(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|code is|your code)'
+            rf'\s*[:\-]?\s*([0-9]{{{min_len},{max_len}}})'
+        ),
+        re.compile(rf'\b([0-9]{{{min_len},{max_len}}})\b'),
+        re.compile(rf'(?<!\d)([0-9]{{{min_len},{max_len}}})(?!\d)'),
+    ]
+    for rx in patterns_list:
+        m = rx.search(clean)
+        if not m:
+            continue
+        c = str(m.group(1) or '').strip()
+        if re.match(r'^(19|20)\d{2}$', c):
+            continue
+        digits_only = re.sub(r'\D', '', c)
+        if min_len <= len(digits_only) <= max_len:
+            return digits_only
+    return ''
+
+# ── نهاية إضافات طول الكود ──────────────────────────────────────────────────
+
 
 dynamic_platforms: List[str] = list(DEFAULT_PLATFORMS)
 
@@ -4366,6 +4445,26 @@ def _deliver_latest_code_to_watch(watch: Dict[str, Any], fetched_payload: Option
     if not data or not code_value or code_value == "غير متوفر":
         return False
 
+    # ── تحقق من طول الكود بناءً على المنصة ──────────────────────────────────
+    try:
+        if not _validate_code_length_for_platform(code_value, platform):
+            sms_raw = str((data or {}).get("text") or (data or {}).get("message") or "").strip()
+            if sms_raw:
+                min_len, max_len = _get_platform_code_range(platform)
+                corrected = _extract_code_with_length(sms_raw, min_len, max_len)
+                if corrected:
+                    code_value = corrected
+                    data["code"] = corrected
+                else:
+                    logger.debug(f"PLATFORM_CODE_VALIDATION: لم يُعثر على كود بطول صحيح للمنصة {platform} (الكود: {code_value})")
+                    return False
+            else:
+                logger.debug(f"PLATFORM_CODE_VALIDATION: كود غير مطابق للمنصة {platform}: {code_value}")
+                return False
+    except Exception as _len_err:
+        logger.debug(f"PLATFORM_CODE_VALIDATION error: {_len_err}")
+    # ── نهاية التحقق من الطول ──────────────────────────────────────────────
+
     if not manual_trigger and code_value == str(watch_data.get("last_seen_code") or "").strip():
         return False
 
@@ -6418,18 +6517,24 @@ def _format_site_timestamp(value: Any) -> str:
         return raw_value
 
 
-def _extract_display_code_from_text(raw_text: str) -> str:
-    direct_code = _extract_code_from_text(raw_text)
+def _extract_display_code_from_text(raw_text: str, platform_hint: str = '') -> str:
+    """يستخرج كود العرض من النص مع مراعاة طول الكود الصحيح للمنصة."""
+    direct_code = _extract_code_from_text(raw_text, platform_hint=platform_hint)
     if direct_code:
         return direct_code
     text_value = _strip_html_text(raw_text or "")
     if not text_value:
         return ""
+    try:
+        min_len, max_len = _get_platform_code_range(platform_hint) if platform_hint else (4, 8)
+    except Exception:
+        min_len, max_len = 4, 8
     patterns = [
         re.compile(
-            r"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|your code|واتساب|فيسبوك)\D{0,24}([0-9]{3,4}(?:[\-\s][0-9]{3,4})|[0-9]{4,8})"
+            rf"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|your code|واتساب|فيسبوك)"
+            rf"\D{{0,24}}([0-9]{{3,4}}(?:[\-\s][0-9]{{3,4}})|[0-9]{{{min_len},{max_len}}})"
         ),
-        re.compile(r"(?<!\d)([0-9]{3,4}[\-\s][0-9]{3,4})(?!\d)"),
+        re.compile(rf"(?<!\d)([0-9]{{3,4}}[\-\s][0-9]{{3,4}})(?!\d)"),
     ]
     for pattern in patterns:
         match = pattern.search(text_value)
@@ -6437,9 +6542,10 @@ def _extract_display_code_from_text(raw_text: str) -> str:
             continue
         candidate = str(match.group(1) or "").strip()
         digits = re.sub(r"\D", "", candidate)
-        if 4 <= len(digits) <= 8 and not re.match(r"^(19|20)\d{2}$", digits):
+        if min_len <= len(digits) <= max_len and not re.match(r"^(19|20)\d{{2}}$", digits):
             return candidate
     return ""
+
 
 
 def _fetch_site_ranges_snapshot(session: Optional[requests.Session] = None) -> Dict[str, Any]:
@@ -8318,17 +8424,17 @@ def _test_mode_visual_number(item: Dict[str, Any]) -> str:
 
 
 def _build_code_delivery_alert_message(number: str, platform: str, code: str, received_at: str) -> str:
-    time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
+    """يبني رسالة وصول الكود بالتنسيق الجديد مع عدد الأكواد المتاحة وزر النسخ."""
+    masked = html.escape(_mask_number(str(number or '')))
+    code_clean = html.escape(str(code or '').strip())
+    try:
+        counts_block = _build_auto_channel_counts_block()
+    except Exception:
+        counts_block = "📊 عدد الأكواد المتاحة حالياً لكل منصة:\n• " + html.escape(_display_platform_name(platform or GENERAL_PLATFORM_NAME)) + ": متاح"
     return (
-        "وصول كود جديد💥\n\n"
-        "الرقم:\n"
-        f"<code>{html.escape(str(number or ''))}</code>\n"
-        "المنصه :\n"
-        f"{html.escape(str(_display_platform_name(platform or GENERAL_PLATFORM_NAME)))}\n"
-        "الكود :\n"
-        f"<code>{html.escape(str(code or ''))}</code>\n"
-        "الوقت:\n"
-        f"{html.escape(time_label)}"
+        f"{counts_block}\n\n"
+        f"📨 {masked}\n\n"
+        f"💥الكود الخاص بك : <code>{code_clean}</code>"
     )
 
 def _fetch_numbers_from_test_numbers(session=None) -> List[Dict]:
