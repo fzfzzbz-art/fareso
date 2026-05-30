@@ -321,9 +321,9 @@ TEST_MAIN_CHANNEL_URL = _get("TEST_MAIN_CHANNEL_URL", f"https://t.me/{REQUIRED_C
 
 TEST_GET_NUMBER_URL = _get("TEST_GET_NUMBER_URL", "")
 
-TEST_MAIN_BUTTON_TEXT = _get("TEST_MAIN_BUTTON_TEXT", "Main Channel")
+TEST_MAIN_BUTTON_TEXT = _get("TEST_MAIN_BUTTON_TEXT", "القناة الرئيسية")
 
-TEST_GET_BUTTON_TEXT = _get("TEST_GET_BUTTON_TEXT", "👍 Get Nember")
+TEST_GET_BUTTON_TEXT = _get("TEST_GET_BUTTON_TEXT", "بوت الرقم")
 
 WELCOME_MESSAGE_FILE      = DATA_DIR / "welcome_message.txt"
 
@@ -1176,23 +1176,19 @@ def _save_welcome_message(text: str):
         logger.warning(f"تعذّر حفظ رسالة الترحيب: {e}")
 
 def _mask_number(number: str) -> str:
-    """يُظهر بداية الرقم ونهايته فقط مع إخفاء الوسط بالكامل."""
+    """يُعيد الرقم مع تشفير الأرقام الوسطى مع الإبقاء على البداية والنهاية."""
     raw = str(number or "").strip()
     digits_only = re.sub(r"\D", "", raw)
     if not digits_only:
         return raw or "غير متوفر"
-
-    total_len = len(digits_only)
-    if total_len <= 2:
-        masked_digits = digits_only[0] + ("*" if total_len == 2 else "")
-    elif total_len <= 4:
-        masked_digits = digits_only[:1] + ("*" * max(1, total_len - 2)) + digits_only[-1:]
-    elif total_len <= 8:
-        masked_digits = digits_only[:2] + ("*" * max(2, total_len - 4)) + digits_only[-2:]
-    else:
-        masked_digits = digits_only[:3] + ("*" * max(4, total_len - 5)) + digits_only[-2:]
-
-    return f"+{masked_digits}" if raw.startswith("+") else masked_digits
+    if len(digits_only) <= 4:
+        return digits_only[:1] + "*" * max(1, len(digits_only) - 2) + digits_only[-1:]
+    if len(digits_only) <= 8:
+        return digits_only[:2] + "*" * max(1, len(digits_only) - 4) + digits_only[-2:]
+    prefix = raw[:5]
+    suffix = digits_only[-3:]
+    hidden = max(3, len(digits_only) - 8)
+    return prefix + "*" * hidden + suffix
 
 def _save_new_welcome_step(message):
     if message.from_user.id != ADMIN_ID:
@@ -2458,7 +2454,7 @@ def _build_channel_post_markup() -> Optional[types.InlineKeyboardMarkup]:
     if not bot_url:
         return None
     mk = types.InlineKeyboardMarkup()
-    mk.add(types.InlineKeyboardButton("🤖 دخول البوت", url=bot_url))
+    mk.add(types.InlineKeyboardButton("بوت الرقم", url=bot_url))
     return mk
 
 
@@ -4138,18 +4134,7 @@ def _clear_private_delivery_failure(user_id: int) -> None:
 
 
 def _build_auto_code_delivery_message(number: str, detected_platform: str, info: Dict[str, Any], code_value: str, received_at: str, sms_text: str = "") -> str:
-    masked_number = _mask_number(number)
-    reply = (
-        "⚡ <b>وصل كود جديد تلقائياً</b>\n\n"
-        f"📂 القسم: {html.escape(str(detected_platform or GENERAL_PLATFORM_NAME))}\n"
-        f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
-        f"📱 الرقم: <code>{html.escape(str(masked_number))}</code>\n"
-        f"🔐 <b>الكود:</b> <code>{html.escape(str(code_value))}</code>\n"
-        f"🕐 الوقت: {html.escape(str(received_at))}"
-    )
-    if sms_text:
-        reply += f"\n\n📩 <b>نص الرسالة:</b>\n{html.escape(str(sms_text)[:1000])}"
-    return reply
+    return _build_code_delivery_alert_message(number, detected_platform, code_value, received_at)
 
 
 def _deliver_latest_code_to_watch(watch: Dict[str, Any], fetched_payload: Optional[Dict[str, Any]] = None, manual_trigger: bool = False) -> bool:
@@ -4428,15 +4413,8 @@ def auto_send_codes():
     codes = extract_codes_from_numbers()
 
     for platform, number, code in codes:
-        key = f"{number}_{code}"
-        if key in sent_codes_cache:
-            continue
-
-        masked_number = _mask_number(number)
-        text = f"📩 كود جديد\n\n📱 الرقم: {masked_number}\n💻 المنصة: {platform}\n🔐 الكود: {code}"
         try:
-            bot.send_message(CHANNEL_USERNAME, text)
-            sent_codes_cache.add(key)
+            _notify_code_to_channel(number, platform, code)
         except Exception as e:
             print("Channel send error:", e)
 
@@ -8023,6 +8001,76 @@ def _flag_to_region_tag(flag: str) -> str:
     except Exception:
         return "#TEST"
 
+def _test_platform_short_label(platform: str) -> str:
+    normalized = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
+    short_map = {
+        "WhatsApp": "WA",
+        "Telegram": "TG",
+        "Instagram": "IG",
+        "TikTok": "TT",
+        "Facebook": "FB",
+        "Twitter": "X",
+        "Snapchat": "SC",
+        "Discord": "DC",
+        "Google": "GO",
+        "YouTube": "YT",
+        "Netflix": "NF",
+        "General": "OTP",
+    }
+    if normalized in short_map:
+        return short_map[normalized]
+    cleaned = re.sub(r"[^A-Za-z0-9]+", "", normalized).upper()
+    return (cleaned[:3] or "OTP")
+
+
+def _test_platform_arabic_label(platform: str) -> str:
+    normalized = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
+    arabic_map = {
+        "WhatsApp": "واتساب للأعمال",
+        "Telegram": "تيليجرام",
+        "Instagram": "إنستغرام",
+        "TikTok": "تيك توك",
+        "Facebook": "فيسبوك",
+        "Twitter": "إكس",
+        "Snapchat": "سناب شات",
+        "Discord": "ديسكورد",
+        "Google": "جوجل",
+        "YouTube": "يوتيوب",
+        "Netflix": "نتفلكس",
+        "General": "المنصة",
+    }
+    return arabic_map.get(normalized, _display_platform_name(normalized))
+
+
+def _test_mode_visual_number(item: Dict[str, Any]) -> str:
+    raw_number = _normalize_number(item.get("number", ""))
+    digits = re.sub(r"\D", "", raw_number)
+    country_digits = re.sub(r"\D", "", str(item.get("country_code", "") or ""))
+    if not country_digits and digits:
+        country_digits = digits[:-4][:4] or digits[:3]
+    if digits.startswith(country_digits):
+        local_digits = digits[len(country_digits):]
+    else:
+        local_digits = digits
+    last_four = (local_digits or digits or "0000")[-4:]
+    bullets = "•" * 5
+    return f"{country_digits or '1'}{bullets}{last_four}"
+
+
+def _build_code_delivery_alert_message(number: str, platform: str, code: str, received_at: str) -> str:
+    time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
+    return (
+        "وصول كود جديد💥\n\n"
+        "الرقم:\n"
+        f"<code>{html.escape(str(number or ''))}</code>\n"
+        "المنصه :\n"
+        f"{html.escape(str(_display_platform_name(platform or GENERAL_PLATFORM_NAME)))}\n"
+        "الكود :\n"
+        f"<code>{html.escape(str(code or ''))}</code>\n"
+        "الوقت:\n"
+        f"{html.escape(time_label)}"
+    )
+
 def _fetch_numbers_from_test_numbers(session=None) -> List[Dict]:
     """Fallback آمن لاستخراج أرقام قسم Test Numbers من live test system."""
     rows: List[Dict] = []
@@ -8099,15 +8147,18 @@ def _generate_test_mode_item() -> Dict:
 
 
 def _build_test_mode_message_text(item: Dict) -> str:
+    platform_name = str(item.get('platform', '') or GENERAL_PLATFORM_NAME).strip() or GENERAL_PLATFORM_NAME
+    platform_code = html.escape(_test_platform_short_label(platform_name))
     country_flag = html.escape(str(item.get('country_flag', '') or '🌐'))
-    country_name = html.escape(str(item.get('country_name', '') or 'غير محددة'))
-    platform_text = html.escape(str(item.get('platform', '') or 'General'))
-    code_text = html.escape(str(item.get('code', '') or '000000'))
+    code_text = re.sub(r"\D", "", str(item.get('code', '') or '000000'))[:6].ljust(6, "0")
+    code_display = f"{code_text[:3]}-{code_text[3:6]}"
+    visual_number = html.escape(_test_mode_visual_number(item))
+    brand_text = html.escape(_test_platform_arabic_label(platform_name))
     return (
-        "رساله اختبار\n\n"
-        f"الدوله: {country_flag} {country_name}\n"
-        f"المنصه: {platform_text}\n"
-        f"الكود : <code>{code_text}</code>"
+        f"{platform_code} | {country_flag} {visual_number} #Arabic\n\n"
+        "📩 &lt;#&gt;\n"
+        f"لا تشارك رمز {brand_text} مع أحد: ‎{html.escape(code_display)}\n"
+        "rJbA/XP1K+V"
     )
 
 
@@ -8122,7 +8173,7 @@ def _build_test_mode_broadcast_messages(max_length: int = 3500) -> List[str]:
 
 
 def _publish_test_mode_item_to_channel(item: Dict) -> None:
-    bot.send_message(
+    _send_message_with_retry(
         TEST_CHANNEL_ID,
         _build_test_mode_message_text(item),
         parse_mode="HTML",
@@ -9944,29 +9995,20 @@ def _fetch_numbers_from_sms_ranges(session: requests.Session) -> List[Dict]:
     return _dedupe_numbers(collected)
 
 def _notify_code_to_channel(number: str, platform: str, code: str, country_info: Optional[Dict] = None, received_at: str = "", sms_text: str = ""):
-    """ينشر الكود داخل القناة مع إخفاء وسط الرقم."""
+    """ينشر الكود كاملاً مع الرقم داخل القناة."""
     number = _normalize_number(number)
     code = str(code or "").strip()
     if not number or not code or code == "غير متوفر":
         return
-    # ─── تنظيف الـ cache إذا كبر ───
     _limit_sent_codes_cache()
-    cache_key = f"channel::{number}::{code}"
+    platform_name = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
+    cache_key = f"channel::{number}::{platform_name}::{code}"
     if cache_key in sent_codes_cache:
         return
-    info = country_info or _get_country_info(number)
     time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
-    masked_number = _mask_number(number)
-    text = (
-        "🔔 <b>كود جديد</b>\n\n"
-        f"🌍 الدولة: {html.escape(str(info.get('flag', '🌐')))} {html.escape(str(info.get('name', 'غير محددة')))}\n"
-        f"📱 الرقم: <code>{html.escape(str(masked_number))}</code>\n"
-        f"💻 المنصة: {html.escape(str(_display_platform_name(platform)))}\n"
-        f"🔐 <b>الكود:</b> <code>{html.escape(str(code))}</code>\n"
-        f"🕐 الوقت: {html.escape(str(time_label))}"
-    )
+    text = _build_code_delivery_alert_message(number, platform_name, code, time_label)
     try:
-        bot.send_message(
+        _send_message_with_retry(
             CHANNEL_ID,
             text,
             parse_mode="HTML",
@@ -9974,7 +10016,7 @@ def _notify_code_to_channel(number: str, platform: str, code: str, country_info:
         )
         sent_codes_cache.add(cache_key)
     except Exception as notify_err:
-        logger.warning(f"تعذّر إرسال metadata للقناة: {notify_err}")
+        logger.warning(f"تعذّر إرسال الكود للقناة: {notify_err}")
 
 
 def _extract_platforms_from_html_loose(page_html: str) -> List[str]:
