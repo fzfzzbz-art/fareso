@@ -37,6 +37,8 @@ import datetime
 
 import tempfile
 
+import shutil
+
 import faulthandler
 
 import traceback
@@ -193,14 +195,16 @@ FAST_RESPONSE_MULTIPLIER = max(1.0, float(_get("FAST_RESPONSE_MULTIPLIER", "2") 
 TEST_MODE_INTERVAL_SECONDS = max(180, int(_get("TEST_MODE_INTERVAL_SECONDS", "180") or "180"))
 STORAGE_TARGET_GB = max(10240, int(_get("STORAGE_TARGET_GB", "10240") or "10240"))
 MAX_NUMBERS_PER_COUNTRY_BUCKET = max(1000, int(_get("MAX_NUMBERS_PER_COUNTRY_BUCKET", "1000000") or "1000000"))
+PERSISTENCE_SNAPSHOT_INTERVAL_SECONDS = max(30, int(_get("PERSISTENCE_SNAPSHOT_INTERVAL_SECONDS", "90") or "90"))
+FORCE_FS_SYNC_ON_SAVE = _env_flag("FORCE_FS_SYNC_ON_SAVE", True)
 
 MANUAL_NUMBERS_ONLY_MODE = _env_flag("MANUAL_NUMBERS_ONLY_MODE", True)
 AUTO_SYNC_NUMBERS = _env_flag("AUTO_SYNC_NUMBERS", False)
 PRESERVE_EXISTING_NUMBERS_ON_FETCH = _env_flag("PRESERVE_EXISTING_NUMBERS_ON_FETCH", True)
 PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC = _env_flag("PRESERVE_SITE_NUMBERS_ON_COUNTRY_SYNC", True)
 
-SITE_DATATABLE_ALLOW_POST = _env_flag("SITE_DATATABLE_ALLOW_POST", False)
-LIVE_MY_SMS_ALLOW_AJAX_POST = _env_flag("LIVE_MY_SMS_ALLOW_AJAX_POST", False)
+SITE_DATATABLE_ALLOW_POST = _env_flag("SITE_DATATABLE_ALLOW_POST", True)
+LIVE_MY_SMS_ALLOW_AJAX_POST = _env_flag("LIVE_MY_SMS_ALLOW_AJAX_POST", True)
 SITE_FETCH_INCLUDE_SMS_RANGES = _env_flag("SITE_FETCH_INCLUDE_SMS_RANGES", False)
 SITE_DATASET_INCLUDE_SLOW_SMS_RANGES = _env_flag("SITE_DATASET_INCLUDE_SLOW_SMS_RANGES", False)
 AUTO_SYNC_SITE_DATA_ON_NEW_USER = _env_flag("AUTO_SYNC_SITE_DATA_ON_NEW_USER", False)
@@ -214,32 +218,59 @@ if MANUAL_NUMBERS_ONLY_MODE:
 
 BASE_DIR = Path(__file__).resolve().parent
 
+def _storage_looks_persistent(path: Path) -> bool:
+    text_value = str(path).lower()
+    persistent_markers = (
+        '/var/data', '/data', '/mnt/data', '/storage', '/persist', '/persistent',
+        '/app/data', '/workspace/data', '/railway', '/render', '/volume'
+    )
+    if any(marker in text_value for marker in persistent_markers):
+        return True
+    env_path = next((str(os.getenv(name, '') or '').strip() for name in (
+        'APP_STORAGE_DIR', 'RENDER_DISK_PATH', 'RAILWAY_VOLUME_MOUNT_PATH', 'BOT_STORAGE_DIR',
+        'PERSISTENT_STORAGE_DIR', 'DATA_DIR', 'STATE_DIR', 'VOLUME_PATH'
+    ) if str(os.getenv(name, '') or '').strip()), '')
+    return bool(env_path and text_value.startswith(str(Path(env_path).expanduser()).lower()))
+
+
 def _resolve_storage_root() -> Path:
-    """يختار مسار تخزين قابل للكتابة ليتوافق مع أغلب الاستضافات."""
+    """يختار مسار تخزين قابل للكتابة مع تفضيل المسارات الدائمة على المؤقتة."""
     candidates = [
-        os.getenv("APP_STORAGE_DIR", "").strip(),
-        os.getenv("RENDER_DISK_PATH", "").strip(),
-        os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip(),
-        os.getenv("BOT_STORAGE_DIR", "").strip(),
+        os.getenv('APP_STORAGE_DIR', '').strip(),
+        os.getenv('RENDER_DISK_PATH', '').strip(),
+        os.getenv('RAILWAY_VOLUME_MOUNT_PATH', '').strip(),
+        os.getenv('BOT_STORAGE_DIR', '').strip(),
+        os.getenv('PERSISTENT_STORAGE_DIR', '').strip(),
+        os.getenv('DATA_DIR', '').strip(),
+        os.getenv('STATE_DIR', '').strip(),
+        os.getenv('VOLUME_PATH', '').strip(),
+        str(BASE_DIR / 'storage'),
+        str(Path.home() / '.telegram_bot_pro'),
         str(BASE_DIR),
-        str(Path(tempfile.gettempdir()) / "telegram_bot_pro"),
+        str(Path(tempfile.gettempdir()) / 'telegram_bot_pro'),
     ]
     seen = set()
+    chosen = None
     for raw_path in candidates:
-        path_text = str(raw_path or "").strip()
+        path_text = str(raw_path or '').strip()
         if not path_text or path_text in seen:
             continue
         seen.add(path_text)
         try:
             candidate = Path(path_text).expanduser().resolve()
             candidate.mkdir(parents=True, exist_ok=True)
-            probe = candidate / ".write_test"
-            probe.write_text("ok", encoding="utf-8")
+            probe = candidate / '.write_test'
+            probe.write_text('ok', encoding='utf-8')
             probe.unlink(missing_ok=True)
-            return candidate
+            if _storage_looks_persistent(candidate):
+                return candidate
+            if chosen is None:
+                chosen = candidate
         except Exception:
             continue
-    fallback = Path(tempfile.gettempdir()) / "telegram_bot_pro_fallback"
+    if chosen is not None:
+        return chosen
+    fallback = Path(tempfile.gettempdir()) / 'telegram_bot_pro_fallback'
     fallback.mkdir(parents=True, exist_ok=True)
     return fallback
 
@@ -326,6 +357,144 @@ TEST_MAIN_BUTTON_TEXT = _get("TEST_MAIN_BUTTON_TEXT", "القناة الرئيس
 TEST_GET_BUTTON_TEXT = _get("TEST_GET_BUTTON_TEXT", "بوت الرقم")
 
 WELCOME_MESSAGE_FILE      = DATA_DIR / "welcome_message.txt"
+
+def _json_backup_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + '.bak')
+
+
+def _json_archive_path(path: Path) -> Path:
+    return BACKUP_DIR / f"{path.name}.lastgood"
+
+
+def _safe_copy_file(src: Path, dst: Path) -> bool:
+    try:
+        if not src.exists() or not src.is_file():
+            return False
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(src, dst)
+        return True
+    except Exception:
+        return False
+
+
+def _core_state_file_paths() -> List[Path]:
+    return [
+        USERS_FILE,
+        NUMBERS_FILE,
+        EVENTS_FILE,
+        WA_QUEUE_FILE,
+        PAID_NUMBERS_FILE,
+        RUNTIME_COOKIES_FILE,
+        SYNC_REPORT_FILE,
+        WELCOME_MESSAGE_FILE,
+    ]
+
+
+def _load_json_from_path(path: Path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _restore_primary_json_from_backup(primary: Path, backup: Path) -> None:
+    try:
+        if primary.resolve() == backup.resolve():
+            return
+    except Exception:
+        pass
+    _safe_copy_file(backup, primary)
+
+
+def _backup_sqlite_database() -> bool:
+    if not NUMBERS_SQLITE_FILE.exists():
+        return False
+    backup_path = BACKUP_DIR / 'numbers.sqlite3.backup'
+    try:
+        src_conn = sqlite3.connect(NUMBERS_SQLITE_FILE, timeout=60, check_same_thread=False)
+        dst_conn = sqlite3.connect(backup_path, timeout=60, check_same_thread=False)
+        try:
+            with dst_conn:
+                src_conn.backup(dst_conn)
+        finally:
+            dst_conn.close()
+            src_conn.close()
+        return True
+    except Exception:
+        return False
+
+
+def _restore_sqlite_backup_if_needed(force: bool = False) -> bool:
+    backup_path = BACKUP_DIR / 'numbers.sqlite3.backup'
+    if not backup_path.exists():
+        return False
+    try:
+        current_ok = NUMBERS_SQLITE_FILE.exists() and NUMBERS_SQLITE_FILE.stat().st_size > 0
+    except Exception:
+        current_ok = False
+    if current_ok and not force:
+        return False
+    try:
+        NUMBERS_SQLITE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _safe_copy_file(backup_path, NUMBERS_SQLITE_FILE)
+        for suffix in ('-wal', '-shm'):
+            sidecar = Path(str(NUMBERS_SQLITE_FILE) + suffix)
+            if sidecar.exists():
+                sidecar.unlink(missing_ok=True)
+        return True
+    except Exception:
+        return False
+
+
+def _snapshot_core_state_files() -> None:
+    for state_path in _core_state_file_paths():
+        try:
+            if state_path.exists() and state_path.is_file():
+                _safe_copy_file(state_path, _json_backup_path(state_path))
+                _safe_copy_file(state_path, _json_archive_path(state_path))
+        except Exception:
+            continue
+    try:
+        _backup_sqlite_database()
+    except Exception:
+        pass
+
+
+_persistence_snapshot_started = False
+_persistence_snapshot_lock = threading.Lock()
+_storage_mode_logged = False
+
+
+def _log_storage_mode_once() -> None:
+    global _storage_mode_logged
+    if _storage_mode_logged:
+        return
+    _storage_mode_logged = True
+    storage_text = str(STORAGE_DIR)
+    if _storage_looks_persistent(STORAGE_DIR):
+        logger.info(f'💾 التخزين الدائم مفعّل: {storage_text}')
+    else:
+        logger.warning(
+            '⚠️ التخزين الحالي قد يكون مؤقتاً وقد تفقد البيانات بعد إعادة إنشاء السيرفر: '
+            f'{storage_text} | يفضّل ضبط APP_STORAGE_DIR أو BOT_STORAGE_DIR أو قرص دائم من الاستضافة.'
+        )
+
+
+def _start_persistence_snapshot_loop_once() -> None:
+    global _persistence_snapshot_started
+    with _persistence_snapshot_lock:
+        if _persistence_snapshot_started:
+            return
+        _persistence_snapshot_started = True
+
+    def _loop():
+        while True:
+            try:
+                _snapshot_core_state_files()
+            except Exception as snapshot_err:
+                logger.warning(f'Persistence snapshot warning: {snapshot_err}')
+            time.sleep(PERSISTENCE_SNAPSHOT_INTERVAL_SECONDS)
+
+    threading.Thread(target=_loop, daemon=True, name='persistence-snapshot').start()
+
 
 DEFAULT_USER_WELCOME      = (
     "👋 أهلاً بك\n\n"
@@ -495,15 +664,21 @@ _hosting_http_started = False
 
 def _detect_public_base_url() -> str:
     candidates = [
-        os.getenv("HOSTING_PUBLIC_URL", ""),
-        os.getenv("APP_URL", ""),
-        os.getenv("RENDER_EXTERNAL_URL", ""),
-        os.getenv("ONRENDER_EXTERNAL_URL", ""),
-        os.getenv("RAILWAY_STATIC_URL", ""),
-        os.getenv("PUBLIC_URL", ""),
-        os.getenv("URL", ""),
+        os.getenv('HOSTING_PUBLIC_URL', ''),
+        os.getenv('APP_URL', ''),
+        os.getenv('RENDER_EXTERNAL_URL', ''),
+        os.getenv('ONRENDER_EXTERNAL_URL', ''),
+        os.getenv('RAILWAY_STATIC_URL', ''),
+        os.getenv('RAILWAY_PUBLIC_DOMAIN', ''),
+        os.getenv('PUBLIC_URL', ''),
+        os.getenv('URL', ''),
+        os.getenv('SERVICE_URL', ''),
+        os.getenv('VERCEL_URL', ''),
+        os.getenv('NETLIFY_URL', ''),
+        os.getenv('APP_HOSTNAME', ''),
+        os.getenv('RENDER_EXTERNAL_HOSTNAME', ''),
     ]
-    koyeb_domain = str(os.getenv("KOYEB_PUBLIC_DOMAIN", "") or "").strip()
+    koyeb_domain = str(os.getenv('KOYEB_PUBLIC_DOMAIN', '') or '').strip()
     if koyeb_domain:
         candidates.append(f"https://{koyeb_domain}")
 
@@ -1009,6 +1184,7 @@ def _login_site_with_credentials(session: requests.Session) -> bool:
 
         if post_resp.status_code == 200 and _is_authenticated_response(post_resp):
             logger.info("✅ تم تسجيل الدخول للموقع بنجاح عبر البريد/كلمة المرور")
+            _persist_runtime_cookies_from_session(session, "auto_login")
             return True
 
         logger.warning("⚠️ تعذر تسجيل الدخول تلقائياً، سيُستخدم الـ cookie الموجود إن كان صالحاً")
@@ -1056,6 +1232,20 @@ def _session_cookie_snapshot(session: requests.Session) -> List[Dict[str, Any]]:
             "rest": dict(getattr(cookie, "_rest", {}) or {}),
         })
     return items
+
+def _persist_runtime_cookies_from_session(session: Optional[requests.Session], reason: str = "") -> None:
+    if not session:
+        return
+    try:
+        items = _session_cookie_snapshot(session)
+        if not items:
+            return
+        _save_runtime_cookies(items, append=False)
+        suffix = f" ({reason})" if reason else ""
+        logger.info(f"🍪 تم تحديث runtime_cookies.json من الجلسة{suffix}")
+    except Exception as persist_err:
+        logger.debug(f"runtime cookie persist skipped: {persist_err}")
+
 
 def _store_site_session_bootstrap(session: requests.Session) -> None:
     if _SITE_SESSION_BOOTSTRAP_TTL_SECONDS <= 0:
@@ -1115,6 +1305,7 @@ def _build_site_session() -> requests.Session:
         probe = session.get(f"{SITE_URL}/portal", timeout=12, allow_redirects=True)
         if _is_authenticated_response(probe):
             logger.info("✅ تم التحقق من جلسة الموقع بنجاح")
+            _persist_runtime_cookies_from_session(session, "probe_ok")
             _store_site_session_bootstrap(session)
             return session
     except Exception as probe_err:
@@ -1122,6 +1313,7 @@ def _build_site_session() -> requests.Session:
 
     if SITE_EMAIL and SITE_PASS:
         if _login_site_with_credentials(session):
+            _persist_runtime_cookies_from_session(session, "post_login")
             _store_site_session_bootstrap(session)
 
     return session
@@ -1129,25 +1321,40 @@ def _build_site_session() -> requests.Session:
 _json_lock = threading.RLock()
 
 def load_json(path: Path, default):
-    try:
-        with _json_lock:
-            if path.exists():
-                with open(path, "r", encoding="utf-8") as f:
-                    return json.load(f)
-    except Exception as e:
-        logger.error(f"load_json({path}): {e}")
+    candidates = [path, _json_backup_path(path), _json_archive_path(path), path.with_suffix(path.suffix + '.tmp')]
+    with _json_lock:
+        for candidate in candidates:
+            try:
+                if not candidate.exists() or not candidate.is_file():
+                    continue
+                payload = _load_json_from_path(candidate)
+                if candidate != path:
+                    _restore_primary_json_from_backup(path, candidate)
+                    logger.warning(f'📦 تم استرجاع {path.name} من نسخة احتياطية: {candidate.name}')
+                return payload
+            except Exception as e:
+                logger.error(f'load_json({candidate}): {e}')
     return default
 
+
 def save_json(path: Path, data):
+    tmp_path = path.with_suffix(path.suffix + '.tmp')
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp_path = path.with_suffix(path.suffix + ".tmp")
         with _json_lock:
-            with open(tmp_path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, separators=(",", ":"))
+            if path.exists():
+                _safe_copy_file(path, _json_backup_path(path))
+                _safe_copy_file(path, _json_archive_path(path))
+            with open(tmp_path, 'w', encoding='utf-8') as f:
+                json.dump(data, f, ensure_ascii=False, separators=(',', ':'))
+                f.flush()
+                if FORCE_FS_SYNC_ON_SAVE:
+                    os.fsync(f.fileno())
             os.replace(tmp_path, path)
+            _safe_copy_file(path, _json_backup_path(path))
+            _safe_copy_file(path, _json_archive_path(path))
     except Exception as e:
-        logger.error(f"save_json({path}): {e}")
+        logger.error(f'save_json({path}): {e}')
 
 users_db        = load_json(USERS_FILE,        {"users": []})
 
@@ -5962,6 +6169,8 @@ def _collect_codes_from_window(session: requests.Session, csrf: str, start_date:
 def _site_ajax_headers(referer: str = "") -> Dict[str, str]:
     headers = {
         "Accept": "application/json, text/plain, */*",
+        "Accept-Language": "en-US,en;q=0.9,ar;q=0.8",
+        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
         "X-Requested-With": "XMLHttpRequest",
     }
     if referer:
@@ -6078,38 +6287,68 @@ def _site_datatable_json(session: requests.Session, page_url: str, data_url: str
             payload_variants.append(rich_payload)
 
     last_error: Optional[Exception] = None
-    request_methods = ("get", "post") if SITE_DATATABLE_ALLOW_POST else ("get",)
-    for payload in payload_variants:
-        for method in request_methods:
-            headers = _site_ajax_headers(page_url)
-            headers["Origin"] = SITE_URL
-            if csrf:
-                headers["X-CSRF-TOKEN"] = csrf
-                headers["X-XSRF-TOKEN"] = csrf
-            try:
-                if method == "post":
-                    resp = session.post(
-                        data_url,
-                        data=payload,
-                        headers=headers,
-                        timeout=25,
-                        allow_redirects=True,
-                    )
-                else:
-                    resp = session.get(
-                        data_url,
-                        params=payload,
-                        headers=headers,
-                        timeout=25,
-                        allow_redirects=True,
-                    )
-                resp.raise_for_status()
-                payload_json = _normalize_site_datatable_payload(resp.json())
-                if isinstance(payload_json, dict) and isinstance(payload_json.get("data"), list):
-                    return payload_json
-            except Exception as fetch_err:
-                last_error = fetch_err
-                continue
+    request_methods = ("post", "get")
+    endpoint_candidates: List[str] = []
+    for candidate in [data_url] + [
+        link for link in _extract_links_from_html(page_text)
+        if any(token in link.lower() for token in ("/data", "datatable", "/messages", "/numbers"))
+    ]:
+        normalized_candidate = str(candidate or "").strip()
+        if not normalized_candidate or normalized_candidate in endpoint_candidates:
+            continue
+        endpoint_candidates.append(normalized_candidate)
+
+    for endpoint_url in endpoint_candidates:
+        for payload in payload_variants:
+            for method in request_methods:
+                headers = _site_ajax_headers(page_url)
+                headers["Origin"] = SITE_URL
+                if csrf:
+                    headers["X-CSRF-TOKEN"] = csrf
+                    headers["X-XSRF-TOKEN"] = csrf
+                try:
+                    if method == "post":
+                        resp = session.post(
+                            endpoint_url,
+                            data=payload,
+                            headers=headers,
+                            timeout=25,
+                            allow_redirects=True,
+                        )
+                    else:
+                        resp = session.get(
+                            endpoint_url,
+                            params=payload,
+                            headers=headers,
+                            timeout=25,
+                            allow_redirects=True,
+                        )
+                    resp.raise_for_status()
+                    content_type = (resp.headers.get("content-type", "") or "").lower()
+                    response_text = getattr(resp, "text", "") or ""
+                    if "json" in content_type:
+                        payload_json = _normalize_site_datatable_payload(resp.json())
+                        if isinstance(payload_json, dict) and isinstance(payload_json.get("data"), list):
+                            return payload_json
+                    html_rows = _extract_table_rows_from_html(response_text)
+                    if html_rows:
+                        return {
+                            "data": html_rows,
+                            "recordsTotal": len(html_rows),
+                            "recordsFiltered": len(html_rows),
+                            "fallback": f"endpoint_html::{endpoint_url}",
+                        }
+                    live_rows = _extract_live_code_rows_from_html(response_text, source="site_datatable_html")
+                    if live_rows:
+                        return {
+                            "data": live_rows,
+                            "recordsTotal": len(live_rows),
+                            "recordsFiltered": len(live_rows),
+                            "fallback": f"endpoint_live_html::{endpoint_url}",
+                        }
+                except Exception as fetch_err:
+                    last_error = fetch_err
+                    continue
 
     html_rows = _extract_table_rows_from_html(page_text)
     if html_rows:
@@ -6433,30 +6672,48 @@ def _fetch_site_codes_snapshot() -> Dict[str, Any]:
             continue
         padded_cells = cells + [""] * max(0, 8 - len(cells))
         combined_html = " | ".join(str(cell or "") for cell in cells if cell is not None)
-        message_text = html.unescape(_strip_html_text(
-            _row_lookup_first(raw_row, "message", "msg", "sms", "text", "body", "content") or padded_cells[3]
-        )).strip()
+        combined_text = html.unescape(_strip_html_text(combined_html)).strip()
+
+        message_seed = _row_lookup_first(raw_row, "message", "msg", "sms", "text", "body", "content", "last_sms")
+        if not message_seed:
+            for cell in cells:
+                cell_text = html.unescape(_strip_html_text(cell)).strip()
+                if _extract_display_code_from_text(cell_text) or _extract_code_from_text(cell_text):
+                    message_seed = cell_text
+                    break
+        message_text = html.unescape(_strip_html_text(message_seed or padded_cells[3] or combined_html)).strip()
+
         range_name = _strip_html_text(
-            _row_lookup_first(raw_row, "range", "service", "range_name", "title", "name") or padded_cells[0]
+            _row_lookup_first(raw_row, "range", "service", "range_name", "title", "name", "application", "app")
+            or padded_cells[0]
         )
-        number_value = _normalize_number(
-            _row_lookup_first(raw_row, "number", "phone", "mobile", "msisdn", "full_number", "fullNumber", "tel", "did", "cli", "line")
-            or str(padded_cells[1] or "")
-        )
-        platform_value = _normalize_platform(
-            _row_lookup_first(raw_row, "platform", "service", "sender") or padded_cells[2]
-        ) or _guess_platform_from_payload(range_name, padded_cells[2], message_text, combined_html) or GENERAL_PLATFORM_NAME
+
+        number_seed = _row_lookup_first(
+            raw_row, "number", "phone", "mobile", "msisdn", "full_number", "fullNumber", "tel", "did", "cli", "line"
+        ) or str(padded_cells[1] or "")
+        discovered_numbers = _extract_phone_candidates_from_text(f"{number_seed} | {combined_text}")
+        number_value = _normalize_number(number_seed) or (discovered_numbers[0] if discovered_numbers else "")
+
+        platform_seed = _row_lookup_first(raw_row, "platform", "service", "sender", "application", "app", "site") or padded_cells[2]
+        platform_value = _normalize_platform(platform_seed) or _guess_platform_from_payload(range_name, platform_seed, message_text, combined_html, combined_text, raw_row) or GENERAL_PLATFORM_NAME
+
+        time_seed = _row_lookup_first(raw_row, "time", "date", "created_at", "createdAt", "received_at", "receive_time", "updated_at", "sent_at") or padded_cells[7]
+        code_value = _extract_display_code_from_text(message_text or combined_text)
         rows.append({
             "range": range_name,
             "number": number_value,
             "platform": platform_value,
             "message": message_text,
-            "code": _extract_display_code_from_text(message_text),
-            "used": _strip_html_text(_row_lookup_first(raw_row, "used", "status", "state") or padded_cells[4]),
+            "code": code_value,
+            "used": _strip_html_text(_row_lookup_first(raw_row, "used", "status", "state", "user") or padded_cells[4]),
             "price": _strip_html_text(_row_lookup_first(raw_row, "price", "cost", "amount") or padded_cells[5]),
-            "package": _strip_html_text(_row_lookup_first(raw_row, "package", "plan", "bundle") or padded_cells[6]),
-            "time": _format_site_timestamp(_row_lookup_first(raw_row, "time", "date", "created_at", "createdAt", "received_at") or padded_cells[7]),
+            "package": _strip_html_text(_row_lookup_first(raw_row, "package", "plan", "bundle", "offer") or padded_cells[6]),
+            "time": _format_site_timestamp(time_seed),
         })
+
+    if rows:
+        rows.sort(key=lambda row: str(row.get("time") or ""), reverse=True)
+
     return {
         "page_url": page_url,
         "data_url": data_url,
@@ -6538,7 +6795,10 @@ def _fetch_latest_my_messages_code_for_number(number: str, platform_hint: str = 
         else:
             same_number.append(normalized_item)
 
-    picked = exact_platform[0] if exact_platform else (same_number[0] if same_number else None)
+    candidates = exact_platform if exact_platform else same_number
+    if candidates:
+        candidates.sort(key=lambda item: str(item.get("date") or item.get("time") or ""), reverse=True)
+    picked = candidates[0] if candidates else None
     return picked or None
 
 
@@ -9016,12 +9276,14 @@ def _sqlite_connect() -> sqlite3.Connection:
     NUMBERS_SQLITE_FILE.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(NUMBERS_SQLITE_FILE, timeout=60, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.execute("PRAGMA synchronous=NORMAL")
-    conn.execute("PRAGMA temp_store=MEMORY")
-    conn.execute("PRAGMA foreign_keys=ON")
-    conn.execute("PRAGMA cache_size=-200000")
-    conn.execute("PRAGMA mmap_size=268435456")
+    conn.execute('PRAGMA journal_mode=WAL')
+    conn.execute('PRAGMA synchronous=FULL')
+    conn.execute('PRAGMA temp_store=MEMORY')
+    conn.execute('PRAGMA foreign_keys=ON')
+    conn.execute('PRAGMA cache_size=-200000')
+    conn.execute('PRAGMA mmap_size=268435456')
+    conn.execute('PRAGMA busy_timeout=60000')
+    conn.execute('PRAGMA wal_autocheckpoint=1000')
     return conn
 
 
@@ -9098,6 +9360,7 @@ def _write_sync_report(report: Dict[str, Any]) -> None:
                     ),
                 )
                 conn.commit()
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             finally:
                 conn.close()
     except Exception as metrics_err:
@@ -9106,20 +9369,20 @@ def _write_sync_report(report: Dict[str, Any]) -> None:
 
 def _load_numbers_from_sqlite() -> List[Dict]:
     if not NUMBERS_SQLITE_FILE.exists():
-        return []
+        _restore_sqlite_backup_if_needed(force=False)
     try:
         _init_numbers_sqlite()
         with _numbers_store_lock:
             conn = _sqlite_connect()
             try:
                 rows = conn.execute(
-                    "SELECT raw_json FROM numbers_snapshot ORDER BY country_key, platform, number"
+                    'SELECT raw_json FROM numbers_snapshot ORDER BY country_key, platform, number'
                 ).fetchall()
             finally:
                 conn.close()
         items = []
         for row in rows:
-            raw_json = row["raw_json"] if isinstance(row, sqlite3.Row) else row[0]
+            raw_json = row['raw_json'] if isinstance(row, sqlite3.Row) else row[0]
             try:
                 item = json.loads(raw_json)
                 if isinstance(item, dict):
@@ -9128,7 +9391,31 @@ def _load_numbers_from_sqlite() -> List[Dict]:
                 continue
         return items
     except Exception as sqlite_load_err:
-        logger.warning(f"تعذر تحميل الأرقام من SQLite: {sqlite_load_err}")
+        logger.warning(f'تعذر تحميل الأرقام من SQLite: {sqlite_load_err}')
+        if _restore_sqlite_backup_if_needed(force=True):
+            logger.warning('📦 تمت استعادة نسخة SQLite الاحتياطية للأرقام.')
+            try:
+                _init_numbers_sqlite()
+                with _numbers_store_lock:
+                    conn = _sqlite_connect()
+                    try:
+                        rows = conn.execute(
+                            'SELECT raw_json FROM numbers_snapshot ORDER BY country_key, platform, number'
+                        ).fetchall()
+                    finally:
+                        conn.close()
+                items = []
+                for row in rows:
+                    raw_json = row['raw_json'] if isinstance(row, sqlite3.Row) else row[0]
+                    try:
+                        item = json.loads(raw_json)
+                        if isinstance(item, dict):
+                            items.append(item)
+                    except Exception:
+                        continue
+                return items
+            except Exception as sqlite_restore_err:
+                logger.warning(f'فشل تحميل نسخة SQLite الاحتياطية: {sqlite_restore_err}')
         return []
 
 
@@ -9173,6 +9460,7 @@ def _store_numbers_snapshot(items: List[Dict], source_label: str = "runtime", me
                     ],
                 )
                 conn.commit()
+                conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
             finally:
                 conn.close()
     except Exception as sqlite_save_err:
@@ -9186,22 +9474,24 @@ def _store_numbers_snapshot(items: List[Dict], source_label: str = "runtime", me
 
 
 def _bootstrap_numbers_storage() -> int:
+    _restore_sqlite_backup_if_needed(force=False)
     _init_numbers_sqlite()
     sqlite_items = _load_numbers_from_sqlite()
     if sqlite_items:
         consolidated = _consolidate_number_sources(sqlite_items)
-        numbers_db["numbers"] = consolidated
+        numbers_db['numbers'] = consolidated
         if isinstance(numbers_db, dict):
-            numbers_db["general_numbers"] = [dict(item) for item in consolidated]
+            numbers_db['general_numbers'] = [dict(item) for item in consolidated]
         save_json(NUMBERS_FILE, numbers_db)
         _invalidate_numbers_runtime_index()
         _refresh_dynamic_platforms()
         _get_numbers_runtime_index()
         return len(consolidated)
 
-    current_json_items = _consolidate_number_sources(numbers_db.get("numbers", []))
+    current_json_items = _consolidate_number_sources(numbers_db.get('numbers', []))
     if current_json_items:
-        _store_numbers_snapshot(current_json_items, source_label="json_bootstrap")
+        _store_numbers_snapshot(current_json_items, source_label='json_bootstrap')
+        _backup_sqlite_database()
     return len(current_json_items)
 
 def _enrich_number_item(item: Dict) -> Dict:
@@ -10880,6 +11170,8 @@ AUTO_SYNC_INTERVAL_MINUTES = max(1, int(_get("AUTO_SYNC_INTERVAL_MINUTES", "3") 
 
 def _start_background_services() -> None:
     background_tasks = [
+        ('storage mode', _log_storage_mode_once),
+        ('persistence snapshot', _start_persistence_snapshot_loop_once),
         ('HTTP server', _start_hosting_http_server_once),
         ('hosting heartbeat', _start_hosting_heartbeat_once),
         ('self ping', _start_self_ping_once),
