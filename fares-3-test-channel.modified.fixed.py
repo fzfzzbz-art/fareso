@@ -10656,6 +10656,13 @@ AUTO_CHANNEL_POST_INTERVAL_MINUTES = max(3, int(_get("AUTO_CHANNEL_POST_INTERVAL
 _auto_channel_post_started = False
 _last_auto_channel_msg_id: Optional[int] = None
 _last_auto_channel_msg_lock = threading.Lock()
+_auto_channel_rotation_lock = threading.Lock()
+_auto_channel_rotation_state: Dict[str, Any] = {
+    'platform_index': 0,
+    'country_offsets': {},
+    'row_offsets': {},
+    'last_country_marker': '',
+}
 
 # يمكن تعطيل المهام التلقائية بالكامل من البيئة عند الحاجة فقط.
 FORCE_DISABLE_AUTO_UPDATES = _env_flag("FORCE_DISABLE_AUTO_UPDATES", False)
@@ -10667,16 +10674,167 @@ if FORCE_DISABLE_AUTO_UPDATES:
     LIVE_TEST_CODES_MONITOR_ENABLED = False
 
 
+def _auto_channel_platform_counts() -> List[Tuple[str, int]]:
+    counts = _platform_counts_snapshot()
+    pairs: List[Tuple[str, int]] = []
+    for platform, count in counts.items():
+        normalized = _normalize_platform(platform)
+        if normalized == GENERAL_PLATFORM_NAME:
+            continue
+        safe_count = int(count or 0)
+        if safe_count <= 0:
+            continue
+        pairs.append((normalized, safe_count))
+    return sorted(pairs, key=lambda pair: (-pair[1], _display_platform_name(pair[0]).lower()))
+
+
+def _build_auto_channel_counts_block(max_chars: int = 1400) -> str:
+    pairs = _auto_channel_platform_counts()
+    if not pairs:
+        return "📊 لا توجد بيانات منصات متاحة حالياً."
+
+    lines = ["📊 عدد الأكواد المتاحة حالياً لكل منصة:"]
+    hidden_count = 0
+    for platform, count in pairs:
+        line = f"• {html.escape(_display_platform_name(platform))}: {count} كود"
+        tentative = "\n".join(lines + [line])
+        if len(tentative) > max_chars:
+            hidden_count += 1
+            continue
+        lines.append(line)
+    if hidden_count:
+        lines.append(f"• +{hidden_count} منصة إضافية")
+    return "\n".join(lines)
+
+
+def _build_auto_channel_item_from_row(platform: str, row: Dict, country: Dict) -> Dict[str, Any]:
+    normalized_platform = _normalize_platform(platform)
+    info = dict(_country_info_from_row(str(row.get('number', '')), row))
+    if isinstance(country, dict):
+        info.update({
+            'name': str(country.get('name') or info.get('name') or 'غير محددة').strip() or 'غير محددة',
+            'flag': str(country.get('flag') or info.get('flag') or '🌐').strip() or '🌐',
+            'code': str(country.get('code') or info.get('code') or '').strip(),
+            'digits_code': str(country.get('digits_code') or info.get('digits_code') or '').strip(),
+            'key': str(country.get('base_key') or country.get('key') or info.get('key') or 'unknown').strip() or 'unknown',
+        })
+    raw_number = _normalize_number(row.get('number', ''))
+    if not raw_number:
+        fallback_country = {
+            'code': info.get('code') or '+1',
+            'digits': info.get('digits_code') or re.sub(r'\D', '', str(info.get('code') or '')) or '1',
+            'name': info.get('name') or 'غير محددة',
+            'flag': info.get('flag') or '🌐',
+        }
+        return _generate_test_mode_item_for_country(fallback_country, service=normalized_platform)
+    code = str(random.randint(100000, 999999))
+    country_flag = info.get('flag', '🌐') or '🌐'
+    country_code = info.get('code') or row.get('country_code') or ''
+    digits_code = info.get('digits_code') or re.sub(r'\D', '', str(country_code or ''))
+    now_label = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    return {
+        'number': raw_number,
+        'masked_number': _mask_test_mode_number(raw_number),
+        'code': code,
+        'platform': normalized_platform,
+        'country_name': info.get('name', 'غير محددة') or 'غير محددة',
+        'country_flag': country_flag,
+        'country_code': country_code,
+        'country_key': info.get('key', 'unknown') or 'unknown',
+        'visual_number_id': f"{digits_code or '1'}{random.randint(10000, 99999)}",
+        'visual_region_flag': country_flag,
+        'visual_region_tag': _flag_to_region_tag(country_flag),
+        'sender_name': TEST_SENDER_NAME,
+        'badge': TEST_MODE_LABEL,
+        'message': f"AUTO-CHANNEL | عرض تلقائي لمنصة {normalized_platform}.",
+        'timestamp': now_label,
+        'source': 'auto_channel_post',
+    }
+
+
+def _pick_auto_channel_item() -> Dict[str, Any]:
+    index = _get_numbers_runtime_index()
+    platform_country_rows = index.get('platform_country_rows', {}) or {}
+    available_platforms = [
+        platform
+        for platform, _count in _auto_channel_platform_counts()
+        if platform_country_rows.get(platform)
+    ]
+    if not available_platforms:
+        return _generate_test_mode_item()
+
+    with _auto_channel_rotation_lock:
+        state = _auto_channel_rotation_state
+        start_platform_index = int(state.get('platform_index', 0) or 0)
+        last_country_marker = str(state.get('last_country_marker') or '').strip()
+
+        for platform_offset in range(len(available_platforms)):
+            platform_pos = (start_platform_index + platform_offset) % len(available_platforms)
+            platform = available_platforms[platform_pos]
+            countries = list(_country_groups_for_platform(platform) or [])
+            if not countries:
+                continue
+
+            country_offsets = state.setdefault('country_offsets', {})
+            start_country_index = int(country_offsets.get(platform, 0) or 0)
+            chosen_country = None
+            chosen_country_index = 0
+            for country_offset in range(len(countries)):
+                country_pos = (start_country_index + country_offset) % len(countries)
+                candidate_country = countries[country_pos]
+                marker = str(candidate_country.get('base_key') or candidate_country.get('key') or country_pos)
+                if len(countries) > 1 and marker == last_country_marker:
+                    continue
+                chosen_country = candidate_country
+                chosen_country_index = country_pos
+                break
+            if chosen_country is None:
+                chosen_country_index = start_country_index % len(countries)
+                chosen_country = countries[chosen_country_index]
+
+            country_key = str(chosen_country.get('key') or '').strip()
+            rows = list(_numbers_for_platform_country(platform, country_key) or [])
+            if not rows:
+                continue
+
+            row_offsets = state.setdefault('row_offsets', {})
+            row_marker = f"{platform}::{country_key}"
+            row_index = int(row_offsets.get(row_marker, 0) or 0) % len(rows)
+            row = dict(rows[row_index])
+
+            row_offsets[row_marker] = row_index + 1
+            country_offsets[platform] = chosen_country_index + 1
+            state['platform_index'] = (platform_pos + 1) % len(available_platforms)
+            state['last_country_marker'] = str(chosen_country.get('base_key') or chosen_country.get('key') or chosen_country_index)
+            return _build_auto_channel_item_from_row(platform, row, chosen_country)
+
+    return _generate_test_mode_item()
+
+
 def _build_auto_channel_post_text() -> str:
-    """يبني رسالة اختبار واحدة فقط ليتم نشرها كل دورة."""
-    return _build_test_mode_message_text(_generate_test_mode_item())
+    """يبني رسالة القناة كل 3 دقائق مع عدد المنصات وتدوير الدولة في كل مرة."""
+    item = _pick_auto_channel_item()
+    counts_block = _build_auto_channel_counts_block()
+    sample_block = _build_test_mode_message_text(item)
+    text_value = (
+        f"{counts_block}\n\n"
+        f"📨 العينة الحالية المرسلة للقناة:\n"
+        f"{sample_block}"
+    )
+    if len(text_value) > 3900:
+        compact_counts = _build_auto_channel_counts_block(max_chars=800)
+        text_value = (
+            f"{compact_counts}\n\n"
+            f"📨 العينة الحالية المرسلة للقناة:\n"
+            f"{sample_block}"
+        )
+    return text_value[:4096]
 
 
 def _post_auto_channel_message_once():
     """ينشر رسالة واحدة فقط في كل مرة ويحذف السابقة تلقائياً."""
     global _last_auto_channel_msg_id
     text_value = _build_auto_channel_post_text()
-    # حذف الرسالة السابقة أولاً
     with _last_auto_channel_msg_lock:
         old_id = _last_auto_channel_msg_id
     if old_id:
@@ -10684,7 +10842,6 @@ def _post_auto_channel_message_once():
             bot.delete_message(CHANNEL_ID, old_id)
         except Exception:
             pass
-    # إرسال الرسالة الجديدة
     sent = bot.send_message(
         CHANNEL_ID,
         text_value,
