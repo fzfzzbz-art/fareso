@@ -1735,42 +1735,17 @@ def _extract_sms_entries(sms_html: str) -> List[Dict]:
             "sender":  _strip_html_text(sender_raw),
             "message": msg_text,
             "time":    _strip_html_text(time_raw),
-            "code":    _smart_code(msg_text),
+            "code":    _extract_display_code_from_text(msg_text, platform_hint=_strip_html_text(sender_raw)) or _smart_code(msg_text),
         })
 
     return entries
 
 def _extract_code_from_text(raw_text: str, platform_hint: str = '') -> str:
     """يستخرج كود التحقق من النص مع مراعاة طول الكود الصحيح للمنصة."""
-    text_value = _strip_html_text(raw_text or '')
-    if not text_value:
-        return ''
-    # تحديد نطاق الطول بناءً على المنصة
-    try:
-        min_len, max_len = _get_platform_code_range(platform_hint) if platform_hint else (4, 8)
-    except Exception:
-        min_len, max_len = 4, 8
-    patterns = [
-        re.compile(
-            rf"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|code is|your code)"
-            rf"\s*[:\-]?\s*([0-9]{{{min_len},{max_len}}})"
-        ),
-        re.compile(rf"([0-9]{{{max(5,min_len)},{max_len}}})"),
-        re.compile(rf"(?<!\d)([0-9]{{{min_len},{max_len}}})(?!\d)"),
-    ]
-    clean = re.sub(r"[^\w\s\u0600-\u06FF:،-]", " ", text_value)
-    for rx in patterns:
-        match = rx.search(clean)
-        if not match:
-            continue
-        code_value = str(match.group(1) or '').strip()
-        if re.match(r"^(19|20)\d{2}$", code_value):
-            continue
-        digits_only = re.sub(r'\D', '', code_value)
-        if min_len <= len(digits_only) <= max_len:
-            return code_value
+    candidates = _extract_ranked_code_candidates(raw_text, platform_hint=platform_hint)
+    if candidates:
+        return str(candidates[0].get('digits') or '').strip()
     return ''
-
 
 def _platform_hint_matches(candidate_platform: str, platform_hint: str = '') -> bool:
     hint_value = _normalize_platform(platform_hint)
@@ -1797,7 +1772,7 @@ def _lookup_cached_code_for_number(number: str, platform_hint: str = '') -> Opti
         if platform_hint and not _platform_hint_matches(str(item.get('platform', '')), platform_hint):
             continue
         message_text = str(item.get('last_sms') or item.get('message') or item.get('sms') or '').strip()
-        code_value = str(item.get('last_code') or item.get('code') or '').strip() or _extract_code_from_text(message_text)
+        code_value = str(item.get('last_code') or item.get('code') or '').strip() or _extract_display_code_from_text(message_text, platform_hint=str(item.get('platform', '') or platform_hint or '')) or _extract_code_from_text(message_text, platform_hint=str(item.get('platform', '') or platform_hint or ''))
         if not code_value:
             continue
         candidates.append({
@@ -1820,6 +1795,8 @@ def _cache_code_for_number(number: str, platform_hint: str, payload: Dict) -> No
         return
     code_value = str((payload or {}).get('code') or '').strip()
     message_text = str((payload or {}).get('text') or (payload or {}).get('message') or '').strip()
+    if not code_value and message_text:
+        code_value = _extract_display_code_from_text(message_text, platform_hint=platform_hint) or _extract_code_from_text(message_text, platform_hint=platform_hint)
     time_value = str((payload or {}).get('date') or (payload or {}).get('created_at') or (payload or {}).get('time') or datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')).strip()
     if not code_value:
         return
@@ -1902,11 +1879,13 @@ def _extract_live_code_rows_from_payload(payload: Any, source: str = 'live_paylo
         numbers = _row_numbers(raw_row)
         if not numbers:
             return
+        platform_name = _route_platform_for_site_row(raw_row, fallback=raw_row.get('Sender', '') or raw_row.get('sender', '') or raw_row.get('service', '') or raw_row.get('platform', '') or GENERAL_PLATFORM_NAME)
         message_text = _row_message(raw_row)
-        code_value = _extract_code_from_text(message_text)
+        code_value = _extract_row_code_value(raw_row, platform_hint=platform_name)
+        if not code_value and message_text:
+            code_value = _extract_display_code_from_text(message_text, platform_hint=platform_name) or _extract_code_from_text(message_text, platform_hint=platform_name)
         if not code_value:
             return
-        platform_name = _route_platform_for_site_row(raw_row, fallback=raw_row.get('Sender', '') or raw_row.get('sender', '') or raw_row.get('service', '') or raw_row.get('platform', '') or GENERAL_PLATFORM_NAME)
         time_value = _row_time(raw_row)
         for normalized in numbers:
             key = (normalized, code_value, platform_name, message_text)
@@ -1949,10 +1928,10 @@ def _extract_live_code_rows_from_html(page_html: str, source: str = 'live_html')
         if not numbers:
             continue
         text_value = _strip_html_text(block)
-        code_value = _extract_code_from_text(text_value)
+        platform_name = _guess_platform_from_payload(text_value) or GENERAL_PLATFORM_NAME
+        code_value = _extract_display_code_from_text(text_value, platform_hint=platform_name) or _extract_code_from_text(text_value, platform_hint=platform_name)
         if not code_value:
             continue
-        platform_name = _guess_platform_from_payload(text_value) or GENERAL_PLATFORM_NAME
         key = (numbers[0], code_value, platform_name, text_value)
         if key in seen:
             continue
@@ -4315,7 +4294,7 @@ def _finalize_delivered_number_for_user(user_id: int, number: str) -> None:
 
 def _mark_auto_code_watch_seen(user_id: int, number: str, code: str) -> None:
     normalized_number = _normalize_number(number)
-    normalized_code = str(code or "").strip()
+    normalized_code = _code_signature(code) or str(code or "").strip()
     if not normalized_number or not normalized_code:
         return
     with _auto_code_watch_lock:
@@ -4508,10 +4487,15 @@ def _deliver_latest_code_to_watch(watch: Dict[str, Any], fetched_payload: Option
         logger.debug(f"PLATFORM_CODE_VALIDATION error: {_len_err}")
     # ── نهاية التحقق من الطول ──────────────────────────────────────────────
 
-    if not manual_trigger and code_value == str(watch_data.get("last_seen_code") or "").strip():
+    current_code_signature = _code_signature(code_value) or str(code_value or "").strip()
+    if not manual_trigger and current_code_signature == str(watch_data.get("last_seen_code") or "").strip():
         return False
 
     sms_text = str((data or {}).get("text") or (data or {}).get("message") or "").strip()
+    display_code = _extract_display_code_from_text(sms_text, platform_hint=platform) if sms_text else ""
+    if display_code and _code_signature(display_code) == _code_signature(code_value):
+        code_value = display_code
+        data["code"] = display_code
     received_at = str((data or {}).get("date") or (data or {}).get("created_at") or (data or {}).get("time") or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
     detected_platform = _normalize_platform((data or {}).get("platform") or (data or {}).get("service") or platform or GENERAL_PLATFORM_NAME)
     info = dict(watch_data.get("country_info") or _get_country_info(number) or {})
@@ -4592,7 +4576,7 @@ def _set_auto_code_watch(chat_id: int, user_id: int, number: str, platform: str,
         _clear_auto_code_watch(user_id)
         return
     baseline = _lookup_cached_code_for_number(normalized_number, normalized_platform) or {}
-    baseline_code = str((baseline or {}).get("code") or "").strip()
+    baseline_code = _code_signature((baseline or {}).get("code") or "")
     info = dict(country_info or _get_country_info(normalized_number) or {})
     with _auto_code_watch_lock:
         _auto_code_watchers[int(user_id)] = {
@@ -6621,36 +6605,125 @@ def _format_site_timestamp(value: Any) -> str:
         return raw_value
 
 
+_ARABIC_CODE_DIGITS_TRANSLATION = str.maketrans({
+    "٠": "0", "١": "1", "٢": "2", "٣": "3", "٤": "4",
+    "٥": "5", "٦": "6", "٧": "7", "٨": "8", "٩": "9",
+    "۰": "0", "۱": "1", "۲": "2", "۳": "3", "۴": "4",
+    "۵": "5", "۶": "6", "۷": "7", "۸": "8", "۹": "9",
+})
+
+_CODE_HINT_WORDS = (
+    'code', 'otp', 'pin', 'passcode', 'password', 'verification', 'verify',
+    'security', 'login', 'confirmation', 'confirm', 'رمز', 'كود', 'code is',
+    'your code', 'رمز التحقق', 'رمز التأكيد', 'رمز الدخول'
+)
+
+
+def _normalize_code_text(raw_text: Any) -> str:
+    value = html.unescape(str(raw_text or ''))
+    value = value.translate(_ARABIC_CODE_DIGITS_TRANSLATION)
+    value = value.replace('‏', ' ').replace('‎', ' ').replace(' ', ' ')
+    return value
+
+
+def _code_signature(value: Any) -> str:
+    return re.sub(r'\D', '', _normalize_code_text(value))
+
+
+def _platform_code_bounds(platform_hint: str = '') -> Tuple[int, int]:
+    try:
+        return _get_platform_code_range(platform_hint) if platform_hint else (4, 8)
+    except Exception:
+        return (4, 8)
+
+
+def _is_likely_false_code(digits: str) -> bool:
+    digits = str(digits or '').strip()
+    if not digits:
+        return True
+    if re.fullmatch(r'(19|20)\d{2}', digits):
+        return True
+    if len(set(digits)) == 1 and len(digits) >= 4:
+        return True
+    return False
+
+
+def _extract_ranked_code_candidates(raw_text: str, platform_hint: str = '') -> List[Dict[str, Any]]:
+    text_value = _strip_html_text(_normalize_code_text(raw_text or ''))
+    if not text_value:
+        return []
+    min_len, max_len = _platform_code_bounds(platform_hint)
+    compact_text = re.sub(r'\s+', ' ', text_value).strip()
+    matches: List[Dict[str, Any]] = []
+    seen = set()
+
+    def _push(candidate: str, score: int, position: int) -> None:
+        display = re.sub(r'\s+', ' ', str(candidate or '').strip())
+        if not display:
+            return
+        digits = re.sub(r'\D', '', display)
+        if len(digits) < min_len or len(digits) > max_len:
+            return
+        if _is_likely_false_code(digits):
+            return
+        normalized_display = display if re.search(r'[\s\-]', display) else digits
+        key = (digits, normalized_display)
+        if key in seen:
+            return
+        seen.add(key)
+        matches.append({
+            'display': normalized_display,
+            'digits': digits,
+            'score': int(score),
+            'position': int(position),
+        })
+
+    keyword_rx = re.compile(
+        rf"(?i)(?:{'|'.join(re.escape(word) for word in _CODE_HINT_WORDS)})[^0-9]{{0,24}}((?:[0-9][\s\-]*){{{min_len},{max_len}}})"
+    )
+    for match in keyword_rx.finditer(compact_text):
+        _push(match.group(1), 300, match.start())
+
+    generic_rx = re.compile(
+        rf"(?<!\d)([0-9]{{{min_len},{max_len}}}|(?:[0-9]{{2,4}}(?:[\s\-][0-9]{{2,4}})+))(?!\d)"
+    )
+    for match in generic_rx.finditer(compact_text):
+        candidate = match.group(1)
+        window = compact_text[max(0, match.start() - 24):min(len(compact_text), match.end() + 24)].lower()
+        keyword_bonus = 40 if any(word in window for word in _CODE_HINT_WORDS) else 0
+        separator_bonus = 20 if re.search(r'[\s\-]', candidate) else 0
+        exact_bonus = 10 if len(re.sub(r'\D', '', candidate)) == min(max(min_len, 6), max_len) else 0
+        _push(candidate, 120 + keyword_bonus + separator_bonus + exact_bonus, match.start())
+
+    matches.sort(key=lambda item: (-int(item.get('score', 0)), int(item.get('position', 0)), -len(str(item.get('digits', '')))))
+    return matches
+
+
+def _extract_row_code_value(raw_row: Dict[str, Any], platform_hint: str = '') -> str:
+    if not isinstance(raw_row, dict):
+        return ''
+    explicit_keys = (
+        'code', 'otp', 'pin', 'passcode', 'verification_code', 'verify_code',
+        'sms_code', 'security_code', 'otp_code', 'last_code', 'code_value'
+    )
+    for key in explicit_keys:
+        value = raw_row.get(key)
+        if value is None:
+            continue
+        text_value = _normalize_code_text(value).strip()
+        if not text_value:
+            continue
+        parsed = _extract_display_code_from_text(text_value, platform_hint=platform_hint) or _extract_code_from_text(text_value, platform_hint=platform_hint)
+        if parsed:
+            return parsed
+    return ''
+
 def _extract_display_code_from_text(raw_text: str, platform_hint: str = '') -> str:
     """يستخرج كود العرض من النص مع مراعاة طول الكود الصحيح للمنصة."""
-    direct_code = _extract_code_from_text(raw_text, platform_hint=platform_hint)
-    if direct_code:
-        return direct_code
-    text_value = _strip_html_text(raw_text or "")
-    if not text_value:
-        return ""
-    try:
-        min_len, max_len = _get_platform_code_range(platform_hint) if platform_hint else (4, 8)
-    except Exception:
-        min_len, max_len = 4, 8
-    patterns = [
-        re.compile(
-            rf"(?i)(?:code|رمز|كود|verification|verify|otp|pin|password|your code|واتساب|فيسبوك)"
-            rf"\D{{0,24}}([0-9]{{3,4}}(?:[\-\s][0-9]{{3,4}})|[0-9]{{{min_len},{max_len}}})"
-        ),
-        re.compile(rf"(?<!\d)([0-9]{{3,4}}[\-\s][0-9]{{3,4}})(?!\d)"),
-    ]
-    for pattern in patterns:
-        match = pattern.search(text_value)
-        if not match:
-            continue
-        candidate = str(match.group(1) or "").strip()
-        digits = re.sub(r"\D", "", candidate)
-        if min_len <= len(digits) <= max_len and not re.match(r"^(19|20)\d{{2}}$", digits):
-            return candidate
+    candidates = _extract_ranked_code_candidates(raw_text, platform_hint=platform_hint)
+    if candidates:
+        return str(candidates[0].get('display') or '').strip()
     return ""
-
-
 
 def _fetch_site_ranges_snapshot(session: Optional[requests.Session] = None) -> Dict[str, Any]:
     page_url = _get("RANGES_URL", f"{SITE_URL}/my/ranges")
@@ -6932,8 +7005,9 @@ def _fetch_site_code_rows_for_endpoint(session: requests.Session, page_url: str,
         platform_seed = _row_lookup_first(raw_row, "platform", "service", "sender", "application", "app", "site") or padded_cells[2]
         platform_value = _normalize_platform(platform_seed) or _guess_platform_from_payload(range_name, platform_seed, message_text, combined_html, combined_text, raw_row) or GENERAL_PLATFORM_NAME
 
+        explicit_code = _extract_row_code_value(raw_row, platform_hint=platform_value)
         time_seed = _row_lookup_first(raw_row, "time", "date", "created_at", "createdAt", "received_at", "receive_time", "updated_at", "sent_at") or padded_cells[7]
-        code_value = _extract_display_code_from_text(message_text or combined_text, platform_hint=platform_value)
+        code_value = explicit_code or _extract_display_code_from_text(message_text or combined_text, platform_hint=platform_value)
         if not code_value and combined_text:
             code_value = _extract_code_from_text(combined_text, platform_hint=platform_value)
         rows.append({
@@ -8048,20 +8122,20 @@ def _site_add_country_platforms(state: Optional[Dict]) -> List[str]:
         seen.add(normalized)
         found.append(normalized)
 
-    # المنصات المكتشفة فعلياً من بيانات نفس الدولة تظهر أولاً حتى لا يتم ربط الدولة بمنصة خاطئة.
+    # المنصات المكتشفة فعلياً من الدولة نفسها تظهر أولاً.
     for row in rows:
         routed = _route_platform_for_site_row(row, fallback=str(row.get('raw_platform') or row.get('platform') or ''))
         _push_platform(routed)
 
-    # لو الموقع لم يوضح منصة الدولة، نعرض القائمة الثابتة كحل احتياطي فقط.
-    if not found:
-        for platform_name in SITE_ADD_FIXED_PLATFORM_CHOICES:
-            _push_platform(platform_name)
+    # وبعدها نعرض جميع المنصات المضافة داخل البوت حتى يقدر الأدمن يضيف الدولة لأي منصة يريدها.
+    for platform_name in _platform_picker_platforms():
+        _push_platform(platform_name)
+    for platform_name in dynamic_platforms:
+        _push_platform(platform_name)
+    for platform_name in SITE_ADD_FIXED_PLATFORM_CHOICES:
+        _push_platform(platform_name)
 
-    if found:
-        return found
-    return list(_platform_picker_platforms())
-
+    return found or list(_platform_picker_platforms())
 
 def _site_add_state_from_dataset(user_id: int, data: Dict, previous_state: Optional[Dict] = None) -> Dict:
     previous = dict(previous_state or site_add_state.get(user_id, {}) or {})
@@ -8354,6 +8428,7 @@ def siteadd_country_callback(call):
         f"📌 المصدر: {bucket.get('source_hint') or 'نفس أرقام الموقع المسجلة حالياً'}",
         '',
         'اختَر المنصة اللي تحب تضيف عليها أرقام الدولة:',
+        'سيتم عرض كل المنصات المضافة داخل البوت، وليس فقط المنصة المكتشفة من الموقع.',
     ]
     for index, row in enumerate(rows[:10], 1):
         preview_lines.append(f"{index}. {row.get('number', '')}")
@@ -10597,7 +10672,7 @@ def _notify_code_to_channel(number: str, platform: str, code: str, country_info:
         return
     _limit_sent_codes_cache()
     platform_name = _normalize_platform(platform or GENERAL_PLATFORM_NAME)
-    cache_key = f"channel::{number}::{platform_name}::{code}"
+    cache_key = f"channel::{number}::{platform_name}::{_code_signature(code) or code}"
     if cache_key in sent_codes_cache:
         return
     time_label = str(received_at or datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")).strip()
