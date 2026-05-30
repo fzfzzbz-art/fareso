@@ -2570,7 +2570,12 @@ def _source_label_for_new_numbers(source: str) -> str:
     return mapping.get(normalized, normalized or 'غير معروف')
 
 
-def _broadcast_text_to_users_async(text_value: str, event_type: str, event_payload: Optional[Dict[str, Any]] = None) -> None:
+def _broadcast_text_to_users_async(
+    text_value: str,
+    event_type: str,
+    event_payload: Optional[Dict[str, Any]] = None,
+    parse_mode: Optional[str] = None,
+) -> None:
     payload = dict(event_payload or {})
     if not str(text_value or '').strip():
         return
@@ -2584,7 +2589,7 @@ def _broadcast_text_to_users_async(text_value: str, event_type: str, event_paylo
         sent = failed = 0
         for uid in recipients:
             try:
-                _send_message_with_retry(uid, text_value)
+                _send_message_with_retry(uid, text_value, parse_mode=parse_mode)
                 sent += 1
             except Exception as notify_err:
                 failed += 1
@@ -2595,14 +2600,22 @@ def _broadcast_text_to_users_async(text_value: str, event_type: str, event_paylo
 
 
 def _build_site_country_user_notification(platform: str, country_name: str, added_count: int, country_flag: str = '🌐') -> str:
-    safe_country_name = str(country_name or 'غير محددة').strip() or 'غير محددة'
-    safe_country_flag = str(country_flag or '🌐').strip() or '🌐'
-    safe_platform = _display_platform_name(platform)
+    safe_country_name = html.escape(str(country_name or 'غير محددة').strip() or 'غير محددة')
+    safe_country_flag = html.escape(str(country_flag or '🌐').strip() or '🌐')
+    safe_platform = html.escape(_display_platform_name(platform))
+    safe_count = max(0, int(added_count or 0))
+    timestamp = html.escape(datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
     return "\n".join([
-        "✅ تم اضافه ارقام جديده",
-        f"📱 عدد الارقام: {max(0, int(added_count or 0))}",
-        f"📂 اسم المنصه: {safe_platform}",
-        f"🌍 اسم الدوله: {safe_country_flag} {safe_country_name}",
+        "✨ <b>إشعار إضافة أرقام جديدة</b>",
+        "",
+        "تمت إضافة دفعة جديدة من الأرقام داخل البوت وأصبحت متاحة الآن للمستخدمين.",
+        "",
+        f"🌍 <b>الدولة:</b> {safe_country_flag} {safe_country_name}",
+        f"📂 <b>المنصة:</b> {safe_platform}",
+        f"🔢 <b>عدد الأرقام المضافة:</b> {safe_count}",
+        f"🕒 <b>وقت الإضافة:</b> {timestamp}",
+        "",
+        "✅ <b>ملاحظة:</b> يمكنك الآن طلب الأرقام الجديدة مباشرة من داخل البوت.",
     ])
 
 
@@ -2611,9 +2624,10 @@ def _notify_channel_country_add(platform: str, country_name: str, added_count: i
         return
     text_value = _build_site_country_user_notification(platform, country_name, added_count, country_flag=country_flag)
     try:
-        bot.send_message(
+        _send_message_with_retry(
             CHANNEL_ID,
             text_value,
+            parse_mode="HTML",
             reply_markup=_build_channel_post_markup(),
         )
         log_event(
@@ -2641,6 +2655,7 @@ def _notify_users_country_add(platform: str, country_name: str, added_count: int
         text_value,
         "SITE_COUNTRY_USERS_NOTIFY",
         payload,
+        parse_mode="HTML",
     )
     _notify_channel_country_add(platform, country_name, added_count, country_flag=country_flag)
 
@@ -8439,7 +8454,7 @@ def _legacy_siteadd_platform_callback(call):
         and _normalize_number(item.get('number', '')) in selected_numbers
     ]
     duplicated_count = max(0, len(prepared) - len(added_for_target))
-    country_info = _country_info_from_row(target_rows[0].get('number', ''), target_rows[0]) if target_rows else {'name': 'غير محددة', 'flag': '🌐', 'code': ''}
+    country_info = _country_info_from_row(rows[0].get('number', ''), rows[0]) if rows else {'name': 'غير محددة', 'flag': '🌐', 'code': ''}
     bucket = next((item for item in state.get('countries', []) if item.get('key') == selected_country_key), None) or {}
     country_title = bucket.get('display_name') or country_info.get('name', 'غير محددة')
     if added_for_target:
