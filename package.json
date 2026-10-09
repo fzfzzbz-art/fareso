@@ -1,0 +1,17 @@
+{
+  "name": "fares-bot",
+  "version": "1.0.0",
+  "description": "Telegram bot for uploading and extracting zip files",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "axios": "^1.7.9",
+    "node-telegram-bot-api": "^0.66.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
