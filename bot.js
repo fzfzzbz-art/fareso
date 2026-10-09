@@ -1,126 +1,116 @@
 const TelegramBot = require('node-telegram-bot-api');
+const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
-const axios = require('axios');
 const AdmZip = require('adm-zip');
 
-const TOKEN = '8738377353:AAEOzFJQM-ZD3fnIOPbcS46gmytkodfqPcQ'; // توكن بوت تليجرام
-const ADMIN_ID = 7231690686; // آيدي حسابك الشخصي
+// توكن بوت التليجرام الخاص بك (ضع توكن بوتك هنا أو اجعله كمتغير بيئة)
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || 'YOUR_TELEGRAM_BOT_TOKEN';
 
-// إعدادات جيت هاب
-// إعدادات جيت هاب تقرأ من متغيرات البيئة في سيرفر Railway
+// إعدادات جيت هاب تقرأ من متغيرات البيئة في Railway
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN; 
 const GITHUB_OWNER = process.env.GITHUB_OWNER; 
 const GITHUB_REPO = process.env.GITHUB_REPO;   
 const GITHUB_BRANCH = 'main'; 
 
-const bot = new TelegramBot(TOKEN, { polling: true });
+// استبدل هذا بـ معرف تيليجرام الخاص بك ليكون البوت مخصصاً لك وحدك
+const ADMIN_ID = process.env.ADMIN_ID ? Number(process.env.ADMIN_ID) : null;
+
+const bot = new TelegramBot(TELEGRAM_BOT_TOKEN, { polling: true });
 console.log('Bot is running and connected to GitHub...');
 
-bot.on('document', async (msg) => {
+bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const userId = msg.from.id;
 
-    if (userId !== ADMIN_ID) {
+    // التحقق من أن المستخدم هو المالك (اختياري للأمان)
+    if (ADMIN_ID && userId !== ADMIN_ID) {
         return bot.sendMessage(chatId, 'عذراً، هذا البوت مخصص للمالك فقط.');
     }
 
     const document = msg.document;
-    const fileName = document.file_name;
-    const fileId = document.file_id;
+    if (!document) return;
 
+    const fileName = document.file_name;
     if (!fileName.endsWith('.zip')) {
-        return bot.sendMessage(chatId, '❌ يرجى إرسال ملف مضغوط بصيغة .zip فقط.');
+        return bot.sendMessage(chatId, 'يرجى إرسال ملف بصيغة .zip فقط.');
     }
 
-    const tempZipPath = path.join(__dirname, fileName);
-    const extractPath = path.join(__dirname, 'extracted_temp');
-
     try {
-        await bot.sendMessage(chatId, `📥 جاري تحميل الملف وتحضيره للرفع إلى GitHub...`);
+        bot.sendMessage(chatId, 'جاري تحميل وفك الملف، ثم رفع المحتويات إلى GitHub...');
 
-        // 1. تحميل الملف من تليجرام
-        const fileLink = await bot.getFileLink(fileId);
-        const response = await axios({ url: fileLink, method: 'GET', responseType: 'stream' });
-        const writer = fs.createWriteStream(tempZipPath);
-        response.data.pipe(writer);
+        // 1. تحميل الملف من تيليجرام
+        const fileLink = await bot.getFileLink(document.file_id);
+        const responseFile = await axios.get(fileLink, { responseType: 'arraybuffer' });
+        const zipPath = path.join(__dirname, fileName);
+        fs.writeFileSync(zipPath, responseFile.data);
 
-        await new Promise((resolve, reject) => {
-            writer.on('finish', resolve);
-            writer.on('error', reject);
-        });
+        // 2. فك الـ ZIP
+        const zip = new AdmZip(zipPath);
+        const extractDir = path.join(__dirname, 'extracted_files');
+        zip.extractAllTo(extractDir, true);
 
-        // 2. فك الضغط محلياً مؤقتاً
-        if (!fs.existsSync(extractPath)) fs.mkdirSync(extractPath);
-        const zip = new AdmZip(tempZipPath);
-        zip.extractAllTo(extractPath, true);
+        // دالة لرفع الملفات بشكل تداخلي (Recursive)
+        async function uploadDirectory(dirPath, repoPath = '') {
+            const files = fs.readdirSync(dirPath);
 
-        await bot.sendMessage(chatId, `🚀 جاري رفع الملفات مباشرة إلى مستودع GitHub الرئيسي...`);
+            for (const file of files) {
+                const fullPath = path.join(dirPath, file);
+                const currentRepoPath = repoPath ? `${repoPath}/${file}` : file;
 
-        // 3. رفع الملفات المستخرجة إلى GitHub تتابعياً
-        await uploadFolderToGitHub(extractPath, '');
+                if (fs.statSync(fullPath).isDirectory()) {
+                    await uploadDirectory(fullPath, currentRepoPath);
+                } else {
+                    const fileContent = fs.readFileSync(fullPath);
+                    const base64Content = fileContent.toString('base64');
 
-        // 4. تنظيف الملفات المؤقتة
-        fs.unlinkSync(tempZipPath);
-        fs.rmSync(extractPath, { recursive: true, force: true });
+                    let sha = undefined;
+                    try {
+                        const existingFile = await axios.get(
+                            `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${currentRepoPath}`,
+                            {
+                                headers: {
+                                    'Authorization': `token ${GITHUB_TOKEN}`,
+                                    'Accept': 'application/vnd.github.v3+json'
+                                }
+                            }
+                        );
+                        sha = existingFile.data.sha;
+                    } catch (e) {
+                        // الملف غير موجود مسبقاً، لا بأس سيتم إنشاؤه جديداً
+                    }
 
-        await bot.sendMessage(chatId, `✅ تم رفع جميع الملفات وفكها بنجاح إلى المستودع الرئيسي في GitHub!`);
+                    // رفع الملف إلى GitHub
+                    await axios.put(
+                        `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${currentRepoPath}`,
+                        {
+                            message: `Auto-upload: ${currentRepoPath} via Telegram Bot`,
+                            content: base64Content,
+                            branch: GITHUB_BRANCH,
+                            ...(sha && { sha })
+                        },
+                        {
+                            headers: {
+                                'Authorization': `token ${GITHUB_TOKEN}`,
+                                'Accept': 'application/vnd.github.v3+json',
+                                'User-Agent': 'Telegram-Bot'
+                            }
+                        }
+                    );
+                }
+            }
+        }
+
+        await uploadDirectory(extractDir);
+
+        // تنظيف الملفات المؤقتة
+        fs.rmSync(zipPath, { force: true });
+        fs.rmSync(extractDir, { recursive: true, force: true });
+
+        bot.sendMessage(chatId, 'تم فك الرفع وجميع الملفات بنجاح إلى مستودع GitHub!');
 
     } catch (error) {
-        console.error(error);
-        if (fs.existsSync(tempZipPath)) fs.unlinkSync(tempZipPath);
-        if (fs.existsSync(extractPath)) fs.rmSync(extractPath, { recursive: true, force: true });
-        await bot.sendMessage(chatId, `❌ حدث خطأ: ${error.message}`);
+        console.error(error.response?.data || error.message);
+        bot.sendMessage(chatId, `حدث خطأ أثناء الرفع: ${error.response?.data?.message || error.message}`);
     }
 });
-
-// دالة تكرارية لرفع الملفات والمجلدات إلى GitHub
-async function uploadFolderToGitHub(localDir, repoDir) {
-    const items = fs.readdirSync(localDir);
-
-    for (const item of items) {
-        const localPath = path.join(localDir, item);
-        const repoPath = repoDir ? `${repoDir}/${item}` : item;
-        const stat = fs.statSync(localPath);
-
-        if (stat.isDirectory()) {
-            // إذا كان مجلد، ادخل بداخله وارفع محتوياته بشكل متكرر
-            await uploadFolderToGitHub(localPath, repoPath);
-        } else {
-            // إذا كان ملف، قم برفعه
-            await uploadFileToGitHub(localPath, repoPath);
-        }
-    }
-}
-
-// دالة رفع ملف فردي باستخدام GitHub Contents API
-async function uploadFileToGitHub(localPath, repoPath) {
-    const fileContent = fs.readFileSync(localPath);
-    const encodedContent = fileContent.toString('base64');
-    const apiUrl = `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${repoPath}`;
-
-    let sha = undefined;
-
-    // التحقق مما إذا كان الملف موجود مسبقاً لجلب الـ SHA الخاص به (مطلوب للتحديث)
-    try {
-        const existingFile = await axios.get(apiUrl, {
-            headers: { Authorization: `token ${GITHUB_TOKEN}` }
-        });
-        sha = existingFile.data.sha;
-    } catch (err) {
-        // الملف غير موجود مسبقاً، لا بأس سيتم إنشاؤه جديداً
-    }
-
-    // رفع أو تحديث الملف في المستودع الرئيسي
-    await axios.put(apiUrl, {
-        message: `Upload ${repoPath} via Telegram Bot`,
-        content: encodedContent,
-        branch: GITHUB_BRANCH,
-        sha: sha
-    }, {
-        headers: {
-            Authorization: `token ${GITHUB_TOKEN}`,
-            'Content-Type': 'application/json'
-        }
-    });
-}
