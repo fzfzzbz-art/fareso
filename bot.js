@@ -8,9 +8,9 @@ const TOKEN = '8738377353:AAEOzFJQM-ZD3fnIOPbcS46gmytkodfqPcQ'; // توكن بو
 const ADMIN_ID = 7231690686; // آيدي حسابك الشخصي
 
 // إعدادات جيت هاب
-const GITHUB_TOKEN = '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'; // التوكن الخاص بحسابك على جيت هاب
-const GITHUB_OWNER = 'fzfzzbz-art'; // اسم المستخدم الخاص بك على جيت هاب
-const GITHUB_REPO = 'fareso'; // اسم مستودع المشروع (مثال: fares-bot)
+const GITHUB_TOKEN = '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';
+const GITHUB_OWNER = 'fzfzzbz-art';
+const GITHUB_REPO = 'fareso';
 const GITHUB_BRANCH = 'main'; // اسم الفرع الأساسي (main أو master)
 
 const bot = new TelegramBot(TOKEN, { polling: true });
