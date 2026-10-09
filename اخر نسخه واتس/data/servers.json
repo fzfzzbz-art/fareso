@@ -1,0 +1,41 @@
+{
+  "servers": {
+    "server1": {
+      "name": "server1",
+      "url": "http://51.75.118.149:20280",
+      "dashboardUrl": "http://51.75.118.149:20280/dashboard",
+      "maxSessions": 4,
+      "isLocal": true,
+      "alive": true,
+      "sessionCount": 0,
+      "lastSeen": 1791214347504
+    },
+    "server2": {
+      "name": "server2",
+      "url": "http://147.135.213.131:20046",
+      "maxSessions": 4,
+      "isLocal": false,
+      "alive": true,
+      "sessionCount": 3,
+      "lastSeen": 1790886184087
+    },
+    "server3": {
+      "name": "server3",
+      "url": "http://51.75.118.169:20103",
+      "maxSessions": 4,
+      "isLocal": false,
+      "alive": true,
+      "sessionCount": 3,
+      "lastSeen": 1790886184087
+    },
+    "server4": {
+      "name": "server4",
+      "url": "http://51.75.118.17:20069",
+      "maxSessions": 4,
+      "isLocal": false,
+      "alive": true,
+      "sessionCount": 2,
+      "lastSeen": 1790886184087
+    }
+  }
+}
