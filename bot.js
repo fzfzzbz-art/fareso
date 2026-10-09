@@ -4,8 +4,8 @@ const path = require('path');
 const axios = require('axios');
 const AdmZip = require('adm-zip');
 
-const TOKEN = 'YOUR_TELEGRAM_BOT_TOKEN'; // توكن بوت تليجرام
-const ADMIN_ID = 123456789; // آيدي حسابك الشخصي
+const TOKEN = '8738377353:AAEOzFJQM-ZD3fnIOPbcS46gmytkodfqPcQ'; // توكن بوت تليجرام
+const ADMIN_ID = 7231690686; // آيدي حسابك الشخصي
 
 // إعدادات جيت هاب
 const GITHUB_TOKEN = 'YOUR_GITHUB_PERSONAL_ACCESS_TOKEN'; // التوكن الخاص بحسابك على جيت هاب
