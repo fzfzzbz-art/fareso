@@ -1,0 +1,51 @@
+{
+  "source": "https://arab-web.vercel.app/",
+  "generatedAt": "2026-08-21T20:59:22.840Z",
+  "files": [
+    {
+      "source": "code-3.js",
+      "target": "تحقيق-رقم.js",
+      "bytes": 3368
+    },
+    {
+      "source": ".js",
+      "target": "روايات-واتباد.js",
+      "bytes": 9838
+    },
+    {
+      "source": "2.js",
+      "target": "روايات-كتب2.js",
+      "bytes": 14757
+    },
+    {
+      "source": "code-1.js",
+      "target": "روايات-كتب.js",
+      "bytes": 10730
+    },
+    {
+      "source": "code-16.js",
+      "target": "اعلان.js",
+      "bytes": 3306
+    },
+    {
+      "source": "code-22.js",
+      "target": "ستوري-للقروب.js",
+      "bytes": 8003
+    },
+    {
+      "source": "code-26.js",
+      "target": "نشيد.js",
+      "bytes": 5598
+    },
+    {
+      "source": ".Telegram-sticker",
+      "target": "تحميل-ملصقات-تيليجرام.js",
+      "bytes": 4432
+    },
+    {
+      "source": "Add-Meta-in-Group",
+      "target": "اضافة-ميتا-للجروب.js",
+      "bytes": 576
+    }
+  ]
+}
