@@ -1,0 +1,20 @@
+node_modules/
+.env
+data/sessions/
+data/tmp/
+data/*.tmp
+data/*.corrupt-*
+*.log
+.DS_Store
+bin/
+data/tools.json
+
+# ★ v3.14: مفاتيح الذكاء الاصطناعي لكل رقم (لا تُرفع أبداً)
+data/ai-keys.json
+
+# Instagram session cookies (never commit)
+data/instagram-cookies.txt
+cookies/instagram.txt
+silana-lite/cookies/instagram.txt
+integrations/linked-commands/silana-lite/cookies/instagram.txt
+data/youtube-cookies.txt
