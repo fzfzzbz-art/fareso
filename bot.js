@@ -8,10 +8,11 @@ const TOKEN = '8738377353:AAEOzFJQM-ZD3fnIOPbcS46gmytkodfqPcQ'; // توكن بو
 const ADMIN_ID = 7231690686; // آيدي حسابك الشخصي
 
 // إعدادات جيت هاب
-const GITHUB_TOKEN = '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';
-const GITHUB_OWNER = 'fzfzzbz-art';
-const GITHUB_REPO = 'fareso';
-const GITHUB_BRANCH = 'main'; // اسم الفرع الأساسي (main أو master)
+// إعدادات جيت هاب تقرأ من متغيرات البيئة في سيرفر Railway
+const GITHUB_TOKEN = process.env.GITHUB_TOKEN; 
+const GITHUB_OWNER = process.env.GITHUB_OWNER; 
+const GITHUB_REPO = process.env.GITHUB_REPO;   
+const GITHUB_BRANCH = 'main'; 
 
 const bot = new TelegramBot(TOKEN, { polling: true });
 console.log('Bot is running and connected to GitHub...');
