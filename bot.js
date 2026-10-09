@@ -8,7 +8,7 @@ const TOKEN = '8738377353:AAEOzFJQM-ZD3fnIOPbcS46gmytkodfqPcQ'; // توكن بو
 const ADMIN_ID = 7231690686; // آيدي حسابك الشخصي
 
 // إعدادات جيت هاب
-const GITHUB_TOKEN = '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';
+const GITHUB_TOKEN = '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';
 const GITHUB_OWNER = 'fzfzzbz-art';
 const GITHUB_REPO = 'fareso';
 const GITHUB_BRANCH = 'main'; // اسم الفرع الأساسي (main أو master)
